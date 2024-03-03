@@ -1,6 +1,6 @@
 # Выбрать идентификаторы и стоимости 10 самых дорогостоящих бронирований (bookings)
 
-use bookings;
+USE bookings;
 
 EXPLAIN ANALYZE
 select book_ref, total_amount

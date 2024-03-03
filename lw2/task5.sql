@@ -1,6 +1,6 @@
 # Выбрать имена и контактные данные всех пассажиров, указанных в самом дорогостоящем бронировании (среди всех, что есть в базе данных)
 
-use bookings;
+USE bookings;
 
 select book_ref, total_amount
 FROM bookings

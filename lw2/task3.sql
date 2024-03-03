@@ -1,6 +1,6 @@
 # Выбрать всю информацию о рейсах (flights) на самолёте Сухой Суперджет-100, для которых аэропорт Чебоксар является пунктом отправления либо прибытия
 
-use bookings;
+USE bookings;
 
 SELECT aircraft_code
 FROM aircrafts_data

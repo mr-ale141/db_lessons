@@ -1,6 +1,6 @@
 # Выбрать всю информацию о рейсах (flights), для которых аэропорт Краснодар является пунктом отправления либо прибытия
 
-use bookings;
+USE bookings;
 
 SHOW COLUMNS FROM airports_data;
 

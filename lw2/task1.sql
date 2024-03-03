@@ -1,6 +1,6 @@
 # Выбрать всю информацию о рейсах (flights), в которых номер рейса (flight_no) заканчивается на '488'
 
-use bookings;
+USE bookings;
 
 SHOW COLUMNS FROM flights;
 
