@@ -8,7 +8,7 @@ FROM seats
 LIMIT 1
 ;
 
-EXPLAIN ANALYZE
+# EXPLAIN ANALYZE
 SELECT DISTINCT a.aircraft_code
 FROM seats s
 INNER JOIN aircrafts_data a

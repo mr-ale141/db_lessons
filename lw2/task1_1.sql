@@ -54,6 +54,15 @@ WHERE flights.flight_id IN (
 )
 ;
 
+# !!!!!!!!!!!!!!!!!!!!
+UPDATE flights f
+INNER JOIN airports_data a
+	ON (f.departure_airport = a.airport_code OR f.arrival_airport = a.airport_code)
+SET status = 'Cancelled'    
+WHERE JSON_EXTRACT(airport_name, '$.ru') = 'Домодедово'
+	AND status = 'Delayed'
+;
+
 # undo changes
 UPDATE flights
 SET status = 'Delayed'

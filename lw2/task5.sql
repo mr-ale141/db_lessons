@@ -1,4 +1,5 @@
 # Выбрать имена и контактные данные всех пассажиров, указанных в самом дорогостоящем бронировании (среди всех, что есть в базе данных)
+# может быть несколько билетов на одно бронирование
 
 USE bookings;
 
@@ -6,6 +7,10 @@ select book_ref, total_amount
 FROM bookings
 ORDER BY total_amount DESC
 LIMIT 10
+;
+SELECT *
+FROM bookings
+WHERE book_ref = '3B54BB'
 ;
 
 EXPLAIN ANALYZE
