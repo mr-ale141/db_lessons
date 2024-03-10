@@ -3,11 +3,12 @@
 
 USE bookings;
 
-select book_ref, total_amount
+SELECT book_ref
 FROM bookings
 ORDER BY total_amount DESC
-LIMIT 10
+LIMIT 1
 ;
+
 SELECT *
 FROM bookings
 WHERE book_ref = '3B54BB'
@@ -22,14 +23,26 @@ ORDER BY total_amount DESC
 LIMIT 1
 ;
 
-/*
-# id	select_type	table	partitions	type	possible_keys			key						key_len	ref					rows	filtered	Extra
-	1	SIMPLE		b					ALL		PRIMARY																		592676	100.00		Using filesort
-	1	SIMPLE		t					ref		tickets_book_ref_fkey	tickets_book_ref_fkey	24		bookings.b.book_ref	1		100.00	
+EXPLAIN ANALYZE
+SELECT t.passenger_name, t.contact_data
+FROM tickets t
+	INNER JOIN bookings b ON t.book_ref = b.book_ref
+WHERE b.book_ref = (
+	SELECT book_ref
+	FROM bookings
+	ORDER BY total_amount DESC
+	LIMIT 1
+);
 
--> Limit: 1 row(s)  (cost=962158.18 rows=1) (actual time=423.154..423.154 rows=1 loops=1)
-    -> Nested loop inner join  (cost=962158.18 rows=820640) (actual time=423.153..423.153 rows=1 loops=1)
-        -> Sort: b.total_amount DESC  (cost=59628.35 rows=592676) (actual time=423.103..423.103 rows=1 loops=1)
-            -> Table scan on b  (cost=59628.35 rows=592676) (actual time=0.042..189.242 rows=593433 loops=1)
-        -> Index lookup on t using tickets_book_ref_fkey (book_ref=b.book_ref)  (cost=1.38 rows=1) (actual time=0.049..0.049 rows=1 loops=1)
+
+/*
+id, select_type, 	table, 	partitions, type, 	possible_keys, 			key, 					key_len, 	ref, 	rows, 	filtered, 	Extra
+1, 	PRIMARY, 		b, , 				const, 	PRIMARY, 				PRIMARY, 				24, 		const, 	1, 		100.00, 	Using index
+1, 	PRIMARY, 		t, , 				ref, t	ickets_book_ref_fkey, 	tickets_book_ref_fkey, 	24, 		const, 	3, 		100.00, 	Using where
+2, 	SUBQUERY, 		bookings, , 		ALL, 	,	 , , , 															592676, 100.00, 	Using filesort
+
+
+-> Filter: (t.book_ref = (select #2))  (cost=1.16 rows=3) (actual time=0.023..0.040 rows=3 loops=1)
+     -> Index lookup on t using tickets_book_ref_fkey (book_ref=(select #2))  (cost=1.16 rows=3) (actual time=0.022..0.038 rows=3 loops=1)
+     -> Select #2...
 */
