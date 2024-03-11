@@ -5,21 +5,21 @@ USE bookings;
 SELECT *
 FROM tickets
 WHERE passenger_name = 'Gennadiy Nikitin'
--- INTO OUTFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/tickets.csv'
+INTO OUTFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/tickets.csv'
 ;
 
 SELECT tf.*
 FROM ticket_flights tf
 	INNER JOIN tickets t ON t.ticket_no = tf.ticket_no
 WHERE passenger_name = 'Gennadiy Nikitin'
--- INTO OUTFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/ticket_flights.csv'
+INTO OUTFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/ticket_flights.csv'
 ;
 
 SELECT bp.*
 FROM boarding_passes bp
 	INNER JOIN tickets t ON t.ticket_no = bp.ticket_no
 WHERE passenger_name = 'Gennadiy Nikitin'
--- INTO OUTFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/boarding_passes.csv'
+INTO OUTFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/boarding_passes.csv'
 ;
 
 /*
@@ -48,7 +48,7 @@ WHERE book_ref IN (
 	) AS book_count
 	WHERE book_count.count = 1
 )
--- INTO OUTFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/bookings.csv'
+INTO OUTFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/bookings.csv'
 ;
 
 /*
@@ -59,11 +59,10 @@ WHERE book_ref IN (
 
 /*
 Delete plane:
-1. bookings
-2. boarding_passes
-3. ticket_flights
-4. tickets
-
+1. boarding_passes
+2. ticket_flights
+3. tickets
+4. bookings
 
 Recovery plane:
 1. bookings
@@ -84,13 +83,12 @@ WHERE t.passenger_name = 'MARINA NIKOLAEVA'
   AND f.arrival_airport = 'MMK'
 ; 
 */
-
--- DELETE t, tf, bp, b
-SELECT *
+/*
+DELETE t, tf, bp, b
 FROM tickets t
 	INNER JOIN ticket_flights tf ON t.ticket_no = tf.ticket_no
     INNER JOIN boarding_passes bp ON t.ticket_no = bp.ticket_no
-	/*LEFT JOIN bookings b ON b.book_ref IN (
+	LEFT JOIN bookings b ON b.book_ref IN (
 		SELECT book_count.book_ref
         FROM (
 			SELECT b.book_ref, count(*) AS count
@@ -104,32 +102,12 @@ FROM tickets t
 			GROUP BY b.book_ref
         ) AS book_count
         WHERE book_count.count = 1
-    )*/
+    )
 WHERE passenger_name = 'Gennadiy Nikitin'
 ;
-
+*/
 
 /*///////////////////DELETE/////////////////////////*/
-
-DELETE 
-	bookings
-FROM bookings
-WHERE book_ref IN (
-	SELECT book_count.book_ref
-	FROM (
-		SELECT b.book_ref, count(*) AS count
-		FROM bookings b
-		INNER JOIN tickets t ON b.book_ref = t.book_ref
-		WHERE b.book_ref IN (
-			SELECT book_ref
-			FROM tickets
-			WHERE passenger_name = 'Gennadiy Nikitin'
-		)
-		GROUP BY b.book_ref
-	) AS book_count
-	WHERE book_count.count = 1
-)
-;
 
 DELETE 
 	bp
@@ -151,19 +129,48 @@ FROM tickets
 WHERE passenger_name = 'Gennadiy Nikitin'
 ;
 
+-- можно удалить антиджойном
+DELETE 
+	bookings
+FROM bookings
+WHERE book_ref IN (
+	'78E2D2','73CA24','DB28C1','D13553','166BBE','6865D5','1828E5','246314','3BF6F4','9825A1',
+	'60EB3F','3F3E5E','35198C','41C522','DA4042','966B80','DCD59F','4860E5','1CE386','F9D06C',
+	'B93FB3','A02FF3','EE57B0','A46890'
+)
+;
 
+/*///////////////////RECOVERY/////////////////////////
+Recovery plane:
+1. bookings
+2. boarding_passes
+3. tickets
+4. ticket_flights
+        WITH MYSQL WORKBANCH TOOL       OR            */
 
-/*///////////////////RECOVERY/////////////////////////*/
-/*        WITH MYSQL WORKBANCH TOOL                   */
+LOAD DATA LOCAL
+	INFILE "C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/bookings.csv" INTO TABLE bookings
+    COLUMNS TERMINATED BY '\t'
+    OPTIONALLY ENCLOSED BY '"'
+;
 
+LOAD DATA LOCAL
+	INFILE "C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/boarding_passes.csv" INTO TABLE boarding_passes
+    COLUMNS TERMINATED BY '\t'
+    OPTIONALLY ENCLOSED BY '"'
+;
 
+LOAD DATA LOCAL
+	INFILE "C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/tickets.csv" INTO TABLE tickets
+    COLUMNS TERMINATED BY '\t'
+    OPTIONALLY ENCLOSED BY '"'
+;
 
-
-
-
-
-
-
+LOAD DATA LOCAL
+	INFILE "C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/ticket_flights.csv" INTO TABLE ticket_flights
+    COLUMNS TERMINATED BY '\t'
+    OPTIONALLY ENCLOSED BY '"'
+;
 
 
 

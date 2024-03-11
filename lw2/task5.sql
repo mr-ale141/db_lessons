@@ -3,6 +3,7 @@
 
 USE bookings;
 
+EXPLAIN ANALYZE
 SELECT book_ref
 FROM bookings
 ORDER BY total_amount DESC
@@ -34,7 +35,7 @@ WHERE b.book_ref = (
 	LIMIT 1
 );
 
-
+-- сортировка кучей
 /*
 id, select_type, 	table, 	partitions, type, 	possible_keys, 			key, 					key_len, 	ref, 	rows, 	filtered, 	Extra
 1, 	PRIMARY, 		b, , 				const, 	PRIMARY, 				PRIMARY, 				24, 		const, 	1, 		100.00, 	Using index
@@ -42,7 +43,10 @@ id, select_type, 	table, 	partitions, type, 	possible_keys, 			key, 					key_len
 2, 	SUBQUERY, 		bookings, , 		ALL, 	,	 , , , 															592676, 100.00, 	Using filesort
 
 
--> Filter: (t.book_ref = (select #2))  (cost=1.16 rows=3) (actual time=0.023..0.040 rows=3 loops=1)
-     -> Index lookup on t using tickets_book_ref_fkey (book_ref=(select #2))  (cost=1.16 rows=3) (actual time=0.022..0.038 rows=3 loops=1)
-     -> Select #2...
+-> Filter: (t.book_ref = (select #2))  (cost=1.05 rows=3) (actual time=0.0572..0.0925 rows=3 loops=1)
+     -> Index lookup on t using tickets_book_ref_fkey (book_ref=(select #2))  (cost=1.05 rows=3) (actual time=0.0549..0.0873 rows=3 loops=1)
+     -> Select #2 (subquery in condition; run only once)
+         -> Limit: 1 row(s)  (cost=59628 rows=1) (actual time=610..610 rows=1 loops=1)
+             -> Sort: bookings.total_amount DESC, limit input to 1 row(s) per chunk  (cost=59628 rows=592676) (actual time=610..610 rows=1 loops=1)
+                 -> Table scan on bookings  (cost=59628 rows=592676) (actual time=0.105..372 rows=593433 loops=1)
 */
