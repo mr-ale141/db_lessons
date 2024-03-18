@@ -3,6 +3,8 @@
 - Ожидаемая схема набора результатов: (aircraft_code, fare_conditions, seat_count)
 */
 
+USE bookings;
+
 EXPLAIN ANALYZE
 SELECT
 	aircraft_code,

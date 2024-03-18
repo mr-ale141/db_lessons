@@ -4,6 +4,8 @@
 - Следует выбирать только рейсы в состоянии 'Scheduled'
 */
 
+USE bookings;
+
 EXPLAIN ANALYZE
 SELECT
 	f.flight_no,
@@ -27,7 +29,7 @@ WHERE f.status = 'Scheduled'
 GROUP BY f.flight_no, f.scheduled_departure
 ORDER BY f.scheduled_departure DESC
 ;
-
+-- что такое антисоединение, почему ищет одно совпадение во вложеном цикле для антисоединения
 /*
 EXPLAIN: 
 -> Sort: f.scheduled_departure DESC  (actual time=14.2..14.2 rows=28 loops=1)

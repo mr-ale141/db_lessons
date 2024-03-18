@@ -4,6 +4,9 @@
 - Даты отправления и прибытия следует выбирать фактические, а не запланированные
 */
 
+USE bookings;
+
+-- tf.amount вырочка за перелет со всех пассажиров
 EXPLAIN ANALYZE
 SELECT
 	f.flight_no,
@@ -11,6 +14,7 @@ SELECT
 FROM flights f
 	INNER JOIN ticket_flights tf ON tf.flight_id = f.flight_id
 WHERE f.status = 'Arrived'
+-- flight_id
 GROUP BY f.flight_no, f.actual_departure
 ORDER BY ANY_VALUE(tf.amount) DESC
 LIMIT 10

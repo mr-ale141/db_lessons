@@ -5,6 +5,8 @@
 	совпадают с тремя последними (например, '0DA0DA')
 */
 
+USE bookings;
+
 EXPLAIN ANALYZE
 SELECT
 	b.book_ref,

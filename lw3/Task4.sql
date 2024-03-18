@@ -5,11 +5,13 @@
 - Даты отправления и прибытия следует выбирать фактические, а не запланированные
 */
 
+USE bookings;
+
 EXPLAIN ANALYZE
 SELECT
-	ANY_VALUE(f.flight_no),
+	f.flight_no,
     f.actual_departure,
-    ANY_VALUE(f.actual_arrival)
+    f.actual_arrival
 FROM flights f
 INNER JOIN airports_data a
 	ON (f.departure_airport = a.airport_code OR f.arrival_airport = a.airport_code)
@@ -24,7 +26,8 @@ WHERE f.status = 'Arrived'
 		FROM airports_data
 		WHERE JSON_EXTRACT(city, '$.ru') = 'Калининград'
 		LIMIT 1)
-GROUP BY f.actual_departure 
+-- лишнее из-за нижней строки
+-- GROUP BY f.actual_departure 
 ORDER BY f.actual_departure DESC
 LIMIT 1
 ;
