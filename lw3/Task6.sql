@@ -26,8 +26,9 @@ WHERE f.status = 'Scheduled'
 		FROM airports_data
 		WHERE JSON_EXTRACT(city, '$.ru') = 'Москва')
 	AND bp.seat_no IS NULL
-GROUP BY f.flight_no, f.scheduled_departure
+GROUP BY f.flight_id
 ORDER BY f.scheduled_departure DESC
+LIMIT 1
 ;
 -- что такое антисоединение, почему ищет одно совпадение во вложеном цикле для антисоединения
 /*
@@ -71,3 +72,4 @@ FROM boarding_passes
 				WHERE JSON_EXTRACT(city, '$.ru') = 'Москва')
 	)
 ;
+

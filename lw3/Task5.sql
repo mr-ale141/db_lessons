@@ -15,7 +15,7 @@ FROM flights f
 	INNER JOIN ticket_flights tf ON tf.flight_id = f.flight_id
 WHERE f.status = 'Arrived'
 GROUP BY f.flight_id
-ORDER BY SUM(distinct tf.amount) DESC
+ORDER BY SUM(tf.amount) DESC
 LIMIT 10
 ;
 
