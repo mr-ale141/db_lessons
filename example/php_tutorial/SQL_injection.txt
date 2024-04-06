@@ -1,0 +1,286 @@
+	Способы защиты от SQL Injection
+
+Чтобы избежать SQL Injection, нужно исключить подстановку произвольных строк в SQL-запрос, формируемый динамически.
+
+	Надёжные методы защиты
+
+Есть два надёжных способа защиты от SQL Injection:
+	* Подготовленные запросы (англ. prepared statements), позволяющие передавать параметры SQL-запроса отдельно от самого SQL-запроса
+	* Экранирование параметров (англ. parameter quoting) с помощью метода PDO::quote()
+
+	Ненадёжные методы защиты
+
+Есть два способа, которые иногда могут предотвратить SQL Injection, но не являются гарантированной защитой:
+	* Валидация параметров запроса — например, путём проверки соответствия пользовательского email-адреса регулярному выражению
+	* Фильтрация параметров запроса — например, удаление HTML-тегов с помощью PHP-функции strip_tags
+
+Эти способы нельзя рассматривать как защиту от SQL Injection, потому что:
+	* Очень легко получить брешь в защите в процессе рефакторинга или вследствие ошибки в коде валидации / фильтрации
+	* Бизнес-требования по валидации могут быть недостаточно строгими для гарантированной защиты — а попытка 
+	сделать их строже создаст неудобства для конечных пользователей
+
+	Type hinting
+	
+Защита от SQL Injection не требуется для параметров функций, имеющих тип int или float — но 
+только при условии, что программист использует type hinting:
+
+// Защита $imageId от SQL Injection не требуется,
+//  потому что явно указан тип int:
+
+	function deleteImageFromDatabase(PDO $connection, int $imageId): void
+	{
+		 // [...]
+	}
+
+// Защита $imageId от SQL Injection ТЕПЕРЬ НУЖНА,
+//  потому что тип данных не указан:
+
+	function deleteImageFromDatabase(PDO $connection, $imageId): void
+	{
+		 // [...]
+	}
+
+// Защита $imageId от SQL Injection ТЕПЕРЬ НУЖНА,
+//  потому что тип данных указан только в phpdoc,
+//  а phpdoc не влияет на выполнение кода:
+
+	function deleteImageFromDatabase(PDO $connection, $imageId): void
+	{
+		 // [...]
+	}
+
+	Экранирование параметров
+
+Класс PDO предоставляет метод quote, который экранирует литерал строки:
+
+	$quotedId = $connection->quote($id);
+
+	$query = <<<SQL
+		SELECT
+			id,
+			path,
+			width,
+			height,
+			mime_type
+		FROM image
+		WHERE id = $quotedId
+		SQL;
+	
+Метод quote класса PDO учитывает два нюанса:
+	- Разные диалекты СУБД имеют разные правила экранирования строк
+	- Кроме того, в некоторых СУБД правила экранирования могут быть изменены параметрами конфигурации
+
+Именно поэтому вместо самодельных аналогов следует использовать PDO::quote().
+
+	Подготовленные SQL-запросы
+
+Допустим, мы разрабатываем функцию для сохранения параметров нового изображения в базу данных:
+	* function saveImageToDatabase(PDO $connection, array $imageData): void
+	* Файл изображения хранится на диске, а в базу данных сохраняются только параметры (в том числе путь к изображению)
+
+SQL-запрос для записи:
+
+INSERT INTO image
+  (path, width, height, mime_type)
+VALUES
+  (?, ?, ?, ?)
+
+В этом запросе 4 раза использован символ ?
+	* В диалекте MySQL этот символ служит заполнителем параметра (англ. parameter placeholder)
+	* При синтаксическом разборе запроса MySQL запоминает места, где были использованы заполнители ?
+	* При выполнении запроса MySQL подставляет вместо заполнителей параметры, переданные в массиве параметров
+
+Чтобы использовать запрос с параметрами на стороне PHP, требуется:
+	* У объекта PDO вызвать метод prepare, передав строку SQL-запроса с заполнителями параметров
+	* У полученного объекта PDOStatement вызвать метод execute, передав массив параметров
+
+Так выглядит функция записи целиком:
+
+	/**
+	 * @param PDO $connection
+	 * @param array{
+	 *     path:string,
+	 *     width:int,
+	 *     height:int,
+	 *     mime_type:string
+	 * } $imageData
+	 * @return void
+	 */
+	function saveImageToDatabase(PDO $connection, array $imageData): void
+	{
+		$query = <<<SQL
+			INSERT INTO image
+			  (path, width, height, mime_type)
+			VALUES
+			  (?, ?, ?, ?)
+			SQL;
+		$statement = $connection->prepare($query);
+		$statement->execute([
+			$imageData['path'],
+			$imageData['width'],
+			$imageData['height'],
+			$imageData['mime_type']
+		]);
+	}
+
+Такой способ передачи параметров называется неименованными параметрами запроса:
+	* В метод PDO::prepare передаётся SQL-запрос с определённым количеством заполнителей параметров ?
+	* В метод PDOStatement::execute передаётся ровно столько параметров, сколько было символов ?
+
+	Именованные параметры
+
+Именованные параметры могут улучшить читаемость кода, особенно если один и тот же параметр используется в запросе многократно.
+
+Для передачи именованных параметров нужно указать их имена после символа : (двоеточние)
+
+INSERT INTO image
+  (path, width, height, mime_type)
+VALUES
+  (:path, :width, :height, :mime_type)
+  
+Здесь указаны 4 параметра запроса: :path, :width, :height и :mime_type.
+
+Передавать такие параметры следует ассоциативным массивом:
+
+	$statement = $connection->prepare($query);
+	$statement->execute([
+		':path' => $imageData['path'],
+		':width' => $imageData['width'],
+		':height' => $imageData['height'],
+		':mime_type' => $imageData['mime_type']
+	]);
+
+Так выглядит полная версия функции записи с именованными параметрами запроса:
+
+	/**
+	 * @param PDO $connection
+	 * @param array{
+	 *     path:string,
+	 *     width:int,
+	 *     height:int,
+	 *     mime_type:string
+	 * } $imageData
+	 * @return void
+	 */
+	function saveImageToDatabase(PDO $connection, array $imageData): void
+	{
+		$query = <<<SQL
+			INSERT INTO image
+			  (path, width, height, mime_type)
+			VALUES
+			  (:path, :width, :height, :mime_type)
+			SQL;
+		$statement = $connection->prepare($query);
+		$statement->execute([
+			':path' => $imageData['path'],
+			':width' => $imageData['width'],
+			':height' => $imageData['height'],
+			':mime_type' => $imageData['mime_type']
+		]);
+	}
+
+	Пример — обновление записи
+
+При обновлении записей можно обновлять все неключевые атрибуты или только определённые.
+
+Обновлять все поля обычно разумнее с точки зрения архитектуры приложения.
+
+Таким образом получаем шаблон операции редактирования:
+	* Прочитать запись по ключу в память программы (в ассоциативный массив или объект)
+	* Произвести операцию редактирования с данными в памяти
+	* Записать результат в строку таблицы
+	
+Последний шаг операции для сущности «Image» реализует следующая функция:
+
+	/**
+	 * @param PDO $connection
+	 * @param int $imageId
+	 * @param array{
+	 *     path:string,
+	 *     width:int,
+	 *     height:int,
+	 *     mime_type:string
+	 * } $imageData
+	 * @return void
+	 */
+	function updateImageInDatabase(PDO $connection, int $imageId, array $imageData): void
+	{
+		$query = <<<SQL
+			UPDATE image
+			SET
+			  path = :path,
+			  width = :width,
+			  height = :height,
+			  mime_type = :mime_type
+			WHERE id = :id
+			SQL;
+		$statement = $connection->prepare($query);
+		$statement->execute([
+			':id' => $imageId,
+			':path' => $imageData['path'],
+			':width' => $imageData['width'],
+			':height' => $imageData['height'],
+			':mime_type' => $imageData['mime_type']
+		]);
+	}
+
+	Пример — удаление записи
+	
+Для удаления строки реляционной таблицы достаточно указать ключ в запросе DELETE.
+
+Таким образом, функция удаления может быть очень простой:
+
+	function deleteImageFromDatabase(PDO $connection, int $imageId): void
+	{
+		$connection->exec("DELETE FROM image WHERE id = $imageId");
+	}
+
+Здесь защиту от SQL Injection обеспечивает type hinting — параметр $imageId гарантированно имеет тип int.
+
+Можно написать функцию по-другому, используя подготовленные запросы (англ. prepared statements):
+
+	function deleteImageFromDatabase(PDO $connection, int $imageId): void
+	{
+		$statement = $connection->prepare("DELETE FROM image WHERE id = :id");
+		$statement->execute([':id' => $imageId]);
+	}
+
+Ещё один способ — экранирование параметра $imageId:
+
+	// Предположим, что ключ $imageId теперь является строкой
+	function deleteImageFromDatabase(PDO $connection, string $imageId): void
+	{
+		$quotedId = $connection->quote($imageId);
+		$connection->exec("DELETE FROM image WHERE id = $quotedId");
+	}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

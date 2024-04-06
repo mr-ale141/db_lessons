@@ -1,0 +1,123 @@
+	Выполнение INSERT
+	
+Сегодня мы выясним, как получить значение автоинкрементного суррогатного ключа после
+выполнения SQL-запроса INSERT.
+
+	Взаимодействие с AUTO_INCREMENT
+	
+Достаточно часто в схеме базы данных используется суррогатный целочисленный ключ 
+с атрибутом AUTO_INCREMENT:
+
+	CREATE TABLE image (
+	  id INT UNSIGNED AUTO_INCREMENT,
+	  path VARCHAR(300) NOT NULL,
+	  width INT UNSIGNED NOT NULL,
+	  height INT UNSIGNED NOT NULL,
+	  mime_type VARCHAR(50) NOT NULL,
+	  PRIMARY KEY (id),
+	  UNIQUE unique_path (path)
+	);
+
+MySQL для колонки с атрибутом AUTO_INCREMENT при добавлении новой строки в таблицу 
+вычисляет значение, которое превышает все предыдущие значения.
+	* Таким образом обеспечивается уникальность суррогатного ключа
+	* В других реляционных СУБД есть аналогичные механизмы, например, атрибут SERIAL в PostgreSQL
+
+При использовании таких ключей в приложении возникает проблема: 
+как вставить запись и получить значение ключа (id), определённое на стороне MySQL?
+
+	Функция LAST_INSERT_ID()
+	
+В диалекте MySQL есть функция LAST_INSERT_ID(), которая возвращает последнее вычисленное 
+MySQL значение колонки с атрибутом AUTO_INCREMENT.
+
+Пример:
+
+	INSERT INTO image
+	  (path, width, height, mime_type)
+	VALUES ('/example.png', 300, 200, 'image/png');
+
+	SELECT LAST_INSERT_ID();
+
+Здесь запрос SELECT LAST_INSERT_ID(); вернёт значение колонки id, подобранное автоматически 
+при вставке строки в таблицу image.
+
+Документация для функции LAST_INSERT_ID() (https://dev.mysql.com/doc/refman/8.0/en/information-functions.html#function_last-insert-id)
+
+Функция LAST_INSERT_ID()  не вызовет проблем в параллельных соединениях. 
+Для каждого соединения с MySQL последнее вычисленное значение AUTO_INCREMENT хранится отдельно. 
+
+Не стоит предполагать, что новое значение ID будет ровно на единицу больше всех предыдущих. 
+В возрастающей последовательности значений AUTO_INCREMENT могут быть пропуски, и на это есть несколько причин.
+
+	Метод lastInsertId класса PDO
+	
+Класс PDO предоставляет метод lastInsertId() для получения значения AUTO_INCREMENT последней успешной вставки:
+	* (int)$connection->lastInsertId();
+
+Полная версия функции сохранения параметров изображения в таблицу image:
+
+	/**
+	 * @param PDO $connection
+	 * @param array{
+	 *     path:string,
+	 *     width:int,
+	 *     height:int,
+	 *     mime_type:string
+	 * } $imageData
+	 * @return int
+	 */
+	function saveImageToDatabase(PDO $connection, array $imageData): int
+	{
+		$query = <<<SQL
+			INSERT INTO image
+			  (path, width, height, mime_type)
+			VALUES
+			  (:path, :width, :height, :mime_type)
+			SQL;
+		$statement = $connection->prepare($query);
+		$statement->execute([
+			':path' => $imageData['path'],
+			':width' => $imageData['width'],
+			':height' => $imageData['height'],
+			':mime_type' => $imageData['mime_type']
+		]);
+
+		return (int)$connection->lastInsertId();
+	}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

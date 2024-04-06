@@ -6,3 +6,4 @@
 Поэтому используйте её как справочник
 Руководство по PHP на metanit.com
 Ссылка: https://metanit.com/php/tutorial/
+Документация PHP PDO: https://www.php.net/manual/ru/book.pdo.php
