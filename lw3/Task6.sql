@@ -6,15 +6,15 @@
 
 USE bookings;
 
-EXPLAIN ANALYZE
+-- EXPLAIN ANALYZE
 SELECT
+	f.flight_id,
 	f.flight_no,
 	f.scheduled_departure,
     COUNT(*) AS available_seats
 FROM flights f
-	INNER JOIN aircrafts_data ad ON ad.aircraft_code = f.aircraft_code
     INNER JOIN seats s ON s.aircraft_code = f.aircraft_code
-    LEFT JOIN boarding_passes bp ON bp.flight_id = f.flight_id AND bp.seat_no = s.seat_no
+    -- LEFT JOIN boarding_passes bp ON bp.flight_id = f.flight_id AND bp.seat_no = s.seat_no
 WHERE f.status = 'Scheduled'
 	AND s.fare_conditions = 'Economy'
     AND f.departure_airport IN (
@@ -25,9 +25,9 @@ WHERE f.status = 'Scheduled'
 		SELECT airport_code 
 		FROM airports_data
 		WHERE JSON_EXTRACT(city, '$.ru') = 'Москва')
-	AND bp.seat_no IS NULL
+	-- AND bp.seat_no IS NULL
 GROUP BY f.flight_id
-ORDER BY f.scheduled_departure DESC
+ORDER BY f.scheduled_departure
 LIMIT 1
 ;
 -- что такое антисоединение, почему ищет одно совпадение во вложеном цикле для антисоединения
@@ -71,5 +71,11 @@ FROM boarding_passes
 				FROM airports_data
 				WHERE JSON_EXTRACT(city, '$.ru') = 'Москва')
 	)
+;
+
+SELECT *
+FROM ticket_flights tf
+LEFT JOIN boarding_passes bp ON bp.ticket_no = tf.ticket_no
+WHERE tf.flight_id = '52650'
 ;
 
