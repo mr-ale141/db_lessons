@@ -1,0 +1,184 @@
+	Используем composer и phpunit
+
+Composer — это утилита командной строки для проектов на PHP, позволяющая устанавливать сторонние 
+PHP-библиотеки (пакеты), управлять автозагрузкой классов (class autoloading) и запускать вспомогательные 
+команды с помощью composer scripts.
+
+	Как установить composer
+
+Для установки достаточно следовать инструкции с сайта composer: https://getcomposer.org/download/
+
+	Установка в Ubuntu Linux
+	
+Проверьте, в что в командной строке доступен интерпретатор PHP версии не ниже 8.0:
+	php --version
+После этого выполните следующие команды, проверяя результат каждой из них:
+	php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+	php -r "if (hash_file('sha384', 'composer-setup.php') === 'dac665fdc30fdd8ec78b38b9800061b4150413ff2e3b6f88543c636f7cd84f6db9189d43a81e5503cda447da73c7e5b6') { echo 'Installer verified'; } else { echo 'Installer corrupt'; unlink('composer-setup.php'); } echo PHP_EOL;"
+	php composer-setup.php
+	php -r "unlink('composer-setup.php');"
+Проверьте работоспособность composer:
+	php composer.phar --version
+После чего переместите в один из системных каталогов для исполняемых файлов:
+	sudo mv composer.phar /usr/local/bin/composer
+Проверьте работоспособность composer с новым названием исполняемого файла:
+	# Команда должна вывести версию (2.7.2 или выше)
+	composer --version
+	# Команда покажет путь к исполняемому файлу composer
+	which composer
+
+
+	Настройка проекта
+
+	Подготовка composer.json
+
+Откройте терминал, перейдите в каталог проекта и инициализируйте файл composer.json следующей командой:
+	composer init --no-interaction --type=project
+Затем откройте файл composer.json и отредактируйте его, добавив "autoload" и "autoload-dev":
+	{
+	  "type": "project",
+	  "autoload": {
+		"psr-4": {
+		  "App\\": "src/"
+		}
+	  },
+	  "autoload-dev": {
+		"psr-4": {
+		  "App\\Tests\\": "tests/"
+		}
+	  },
+	  "require": {}
+	}
+
+	Фиксируем конфигурацию composer
+
+Добавьте под контроль версий файлы composer:
+	git add composer.json composer.lock
+
+	Установка расширения php-xml
+
+Для следующего шага нам потребуется расширение php-xml, поэтому мы установим его.
+	
+	Установка php-xml в Ubuntu Linux
+	
+Выполните команду в соответствии со своей версией PHP:
+	# Поменяйте "8.3" на свою минорную версию PHP, например, 8.4
+	sudo apt-get install php8.3-xml
+	# Определить версию php можно так:
+	php --version
+После установки php-xml проверить его наличие можно так:
+	php -m | grep xml
+Ожидаемый результат:
+	libxml
+	xml
+	xmlreader
+	xmlwriter
+
+
+	Установка phpunit
+
+Для написания тестов мы будем использовать библиотеку PHPUnit
+Документация: PHPUnit Manual 
+	* (https://docs.phpunit.de/en/11.1/)
+Перевод документации на русский: Руководство по PHPUnit 
+	* (https://phpunit-documentation-russian.readthedocs.io/ru/latest/index.html)
+Установить PHPUnit можно так:
+	composer require --dev phpunit/phpunit=11.1.1
+Чтобы проверить запуск PHPUnit после установки, выполните команду:
+	php vendor/bin/phpunit --version
+
+	Используем PHPUnit
+
+	Команда composer tests
+
+Научим composer запускать наши тесты. Для этого откройте файл composer.json и добавьте в корневой объект 
+поле "scripts" (лучше перед "require-dev"):
+
+	"scripts": {
+	  "tests": "php vendor/bin/phpunit tests",
+	  "unit-tests": "php vendor/bin/phpunit tests/Unit",
+	  "component-tests": "php vendor/bin/phpunit tests/Component",
+	  "functional-tests": "php vendor/bin/phpunit tests/Functional"
+	},
+	
+Теперь тесты можно запускать командой 
+	composer tests
+Кроме того, мы будем делить тесты разных уровней пирамиды тестирования по каталогам и поэтому добавили 
+в composer.json раздельные команды запуска:
+
+Тип тестов
+	Каталог
+	Команда запуска
+Модульные тесты
+	tests/Unit/
+	composer unit-tests
+Компонентные интеграционные тесты
+	tests/Component/
+	composer component-tests
+Функциональные интеграционные тесты
+	tests/Functional/
+	composer functional-tests
+
+	Пробный модульный тест
+
+Создайте в проекте каталог tests/Unit/Sandbox.
+Затем создайте в каталоге файл SumNumbersTest.php со следующим содержимым:
+
+	<?php
+	declare(strict_types=1);
+
+	namespace App\Tests\Unit\Sandbox;
+
+	use PHPUnit\Framework\TestCase;
+
+	class SumNumbersTest extends TestCase
+	{
+		public function testUploadPaths()
+		{
+			$this->assertEquals(5, 2 + 2); // fail test
+		}
+	}
+
+Теперь выполните команду запуска тестов:
+	composer tests
+
+PHPUnit должен запуститься и вывести сообщение о провале одного теста.
+
+
+	Как писать свои тесты
+
+Мы располагаем все тестовые сценарии в каталоге tests/ — и этот же путь указан в composer.json 
+в команде запуска phpunit.
+
+При этом каждый набор тестов (англ. test suite) представляет собой класс, наследующийся от класса 
+PHPUnit\Framework\TestCase\TestCase:
+	* Название такого класса должно заканчиваться суффиксом "Test"
+	* Каждый метод, представляющий собой тестовый сценарий, должен быть публичным 
+		(модификатор доступа public), а его имя должно начинаться с префикса "test"
+
+Кроме того, мы следуем соглашениям об автозагрузке PSR-4. Эти соглашения можно показать на примере:
+	* Пусть набор тестов находится в файле tests/Component/DatabaseTest.php
+	* Тогда класс набора тестов должен называться DatabaseTest
+	* Этот класс должен находиться в пространстве имён App\Tests\Component\DatabaseTest
+
+Другими словами, каталогу tests/ соответствует пространство имён App\Tests. Именно такое соответствие 
+мы описали ранее в файле composer.json:
+
+	// фрагмент файла composer.json
+	"autoload-dev": {
+	  "psr-4": {
+		"App\\Tests\\": "tests/"
+	  }
+	},
+
+Пространство имён в PHP определяется директивой namespace, которую обычно располагают 
+после директивы declare:
+
+	<?php
+	declare(strict_types=1);
+
+	namespace App\tests\Unit\Sandbox;
+
+	/* use ... */
+
+	/* class  ... */

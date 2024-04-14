@@ -1,0 +1,18 @@
+Example slim:
+https://github.com/sergey-shambir/db-course-lab-3-wiki-backend
+
+Twig for Developers:
+https://twig.symfony.com/doc/2.x/api.html
+
+Сайт фреймворка: https://www.slimframework.com/
+https://www.slimframework.com/docs/v4/
+
+Сайт фреймворка: https://symfony.com/what-is-symfony
+
+Сайт библиотеки: https://docs.guzzlephp.org/
+GuzzleHttp — самая популярная библиотека для отправки HTTP-запросов из PHP-скрипта.
+Другими словами:
+	* PHP-фреймворки, такие как Slim и Symfony, предназначены для работы PHP-приложения в роли 
+		бэкенда HTTP-сервера, то есть для обработки HTTP Request и отправки клиенту HTTP Response
+	* GuzzleHttp предназначен для отправки HTTP-запросов из PHP-скрипта, например, для обращения 
+		к сервису другой команды или к стороннему API, арендуемого у другой компании
