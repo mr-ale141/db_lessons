@@ -1,0 +1,160 @@
+	MVC для Web-приложений
+
+Рассмотрим, как видоизменяется шаблон MVC в адаптации для Web-приложений.
+
+	Классификация приложений
+
+	Бэкенд и фронтенд
+
+В контексте Web-приложений и распределённых систем эти термины обозначают следующее:
+	* Фронтенд Web-сервиса — это приложение для пользователя, предоставляющее ему интерфейс 
+		для выполнения действий с Web-сервисом
+	* Бэкенд Web-сервиса — это серверное приложение, обрабатывающее поступающие запросы
+
+	Типы фронтенда
+
+* Фронтендом является браузерный клиент — то есть набор Web-страниц, позволяющих пользоваться Web-сервисом
+* Фронтендом также является мобильный клиент (мобильное приложение) — которое часто служит альтернативой 
+	браузерному клиенту для пользователей смартфонов и планшетов
+* В более редких случаях фронтендом является Desktop-приложение, если оно служит альтернативой браузерному 
+	клиенту и мобильному клиенту
+
+Браузерный клиент выполняется в одном из двух вариантов:
+	* Классический вариант с Web-страницами строится на HTML-шаблонах и формах, которые обрабатывает 
+		бэкенд Web-сервиса
+		- CSS и JavaScript в данном случае дополняют HTML-шаблоны
+	* SPA приложение (сокр. от Single Page Application) — более современный вариант веб-приложений, 
+		в котором весь браузерный интерфейс строится динамически средствами JavaScript
+		- Подход SPA хорошо подходит для сложных фронтендов и онлайн-редакторов — так называемых 
+			Rich Internet Application (насыщенных веб-приложений)
+
+	Типы бэкенда
+
+Бэкенды можно поделить на два типа:
+	* Классический бэкенд с Web-страницами строится на HTML-шаблонах и формах
+		- В случае PHP такой бэкенд активно использует PHP-шаблоны, Twig-шаблоны или иной шаблонизатор
+	* API-сервис (англ. API Service) не предоставляет Web-страниц и предлагает только некоторый API, 
+		позволяющий программно обращаться к возможностям сервиса
+		- Для обращения к API используются HTTP-запросы или иной сетевой протокол прикладного уровня
+
+	MVC в классическом бэкенде
+
+В классическом варианте бэкенда с Web-страницами MVC интерпретируется так:
+	* View — это файлы шаблонов страниц, а также классы и функции, представляющие параметры сложных шаблонов
+		- Шаблоны могут быть выполнены в виде PHP-файлов, Twig-файлов или файлов другого шаблонизатора
+	* Controller — это классы или функции, которые принимают HTTP-запрос (Request) и возвращают 
+		HTTP-ответ (Response)
+	* Model — это все классы и функции остальных архитектурных слоёв
+		- Напомним, что Controller и View относятся к архитектурному слою представления (Presentation Layer)
+
+	Пример
+
+Исходный код примера классического бэкенда с веб-страницами: 
+	https://github.com/sergey-shambir/db-course-lab-2-ui-table
+
+Этот Web-сервис предоставляет возможность просмотра открытых данных об ограничениях ввоза сельскохозяйственной 
+продукции в Россию.
+
+Скриншот основного экрана (см. MVC_5.png).
+
+Диаграмма классов, составляющих модель MVC (см. MVC_6.png).
+
+На этой диаграмме:
+	* View представлен Twig-шаблоном limitations_page.twig
+	* Controller представлен классом LimitationsController
+	* К модели относятся все остальные классы
+		- LimitationData — класс, представляющий данные одной строки в списке ограничений на ввоз продукции
+		- LimitationDataSource — класс, инкапсулирующий логику чтения данных из базы данных
+
+Сокращённая версия класса LimitationsController:
+
+	class LimitationsController
+	{
+		public function table(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
+		{
+			$formData = LimitationsFormData::fromArray($request->getQueryParams());
+			$listParams = $this->getListLimitationsParams($formData);
+
+			$view = Twig::fromRequest($request);
+			$dataSource = new LimitationDataSource();
+			/* ... */
+
+			return $view->render($response, 'limitations_page.twig', [
+				'form' => [ /* ... */ ],
+				'table_rows' => array_map(
+					fn($limitation) => $this->getRowData($limitation),
+					$limitations
+				 )
+			]);
+		}
+	​}
+
+Этот контроллер использует интерфейсы ServerRequestInterface и ResponseInterface, предоставленные 
+микрофреймворком Slim.
+
+	MVC в API-сервисе
+
+API-сервис — это бэкенд, который не имеет Web-страниц и предоставляет только методы API, доступные для 
+клиентов сервиса по протоколу HTTP или по другому прикладному протоколу.
+
+В API-сервисах шаблон MVC интерпретируется так:
+	* View — классы и функции, отвечающие за форматирование сложных ответов методов API
+		- В API-сервисах View может не быть вовсе
+	* Controller — это классы или функции, которые принимают HTTP-запрос (Request) 
+		и возвращают HTTP-ответ (Response)
+		- Если API-сервис использует иной прикладной протокол, то смысл контроллера 
+			меняется соответственно протоколу
+	* Model — это все классы и функции остальных архитектурных слоёв
+
+	Пример
+
+Исходный код примера API-сервиса: https://github.com/sergey-shambir/db-course-lab-3-wiki-backend
+
+Этот API-сервис позволяет с помощью HTTP-запросов управлять данными статей в базе данных.
+
+Диаграмма классов (см. MVC_7.png).
+
+На этой диаграмме:
+	* View — это классы ArticleApiResponseFormatter и ArticleApiRequestParser
+		- Класс ArticleApiRequestParser отвечает за разбор параметров HTTP-запросов
+		- Класс ArticleApiResponseFormatter отвечает за генерацию HTTP-ответов
+		- Оба класса статические, то есть все их методы являются статическими методами
+		- Иными словами, экземпляры этих классов не создаются никогда
+	* Controller — это класс ArticleApiController
+		- Он работает по модели Request-Response
+	* Model — это остальные классы
+		- Класс Article представляет собой программную модель статьи
+		- Класс ArticleRepository инкапсулирует доступ к базе данных, используя метафору репозитория
+		- Репозиторием называют класс, выглядящий как коллекция объектов, обладающая свойством 
+			персистентности (т.е. сохраняющая данные во внешнее хранилище)
+
+Сокращённая версия класса ArticleApiController:
+
+	class ArticleApiController
+	{
+		private const HTTP_STATUS_OK = 200;
+		private const HTTP_STATUS_BAD_REQUEST = 400;
+
+		public function listArticles(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
+		{
+			$articles = ServiceProvider::getInstance()->getArticleQueryService()->listArticles();
+			$responseData = ArticleApiResponseFormatter::formatArticleSummaryList($articles);
+
+			return $this->success($response, $responseData);
+		}
+
+		public function batchDeleteArticles(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
+		{
+			try
+			{
+				$ids = ArticleApiRequestParser::parseIntegerArray($request->getQueryParams(), 'ids');
+			}
+			catch (RequestValidationException $exception)
+			{
+				return $this->badRequest($response, $exception->getFieldErrors());
+			}
+
+			ServiceProvider::getInstance()->getArticleService()->batchDeleteArticles($ids);
+			return $response;
+		}
+	}

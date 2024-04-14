@@ -1,0 +1,304 @@
+	Модель Request-Response
+
+В этой статье мы рассмотрим
+	* модель Request-Response, используемую для построения клинет-серверных приложений
+	* PSR-7 — реализацию модели Request-Response для языка PHP
+
+	Суперглобальные переменные PHP
+
+В PHP изначально присутствуют суперглобальные переменные (http://xn--%20-5cdelnddaaa2ecvjiafqmknh4cwoman/). 
+Вот некоторые из них:
+	Переменная
+		Что хранит
+	$_SERVER
+		Различные параметры сервера, включая переменные окружения PHP-процесса
+	$_ENV
+		Переменные окружения PHP-процесса
+	$_GET
+		Параметры из URL Query
+	$_POST
+		Параметры из тела запроса, если тело запроса было в формате application/x-www-form-urlencoded 
+			либо multipart/form-data
+	$_FILES
+		Параметры отправленных в запросе файлов (хранятся отдельно от $_POST)
+	$_COOKIE
+		Параметры, записанные в значениях заголовка Cookie в HTTP-запросе
+
+А теперь сравните это с логической структурой HTTP-запроса и HTTP-ответа:
+	Совершенно разная структура!
+
+	Причины различий
+
+Причина, по которой суперглобальные переменные полностью отличаются от модели HTTP, 
+лежит в историческом прошлом и в модели работы PHP-интерпретатора.
+	* Дело в том, что PHP-скрипты обычно вызываются веб-сервером по протоколу CGI либо FastCGI
+		- CGI — сокращение от Common Gateway Interface
+	* При этом HTTP-запросы принимает и обрабатывает веб-сервер, а не интерпретатор PHP
+
+	Последствия различий
+	
+Во-первых логическая структура HTTP запросов и ответов сильно отличается от структуры 
+суперглобальных переменных PHP:
+	* Разработчик, знающий модель HTTP, должен мысленно сопоставлять её с моделью 
+		суперглобальных переменных PHP
+	* Разработчик, изучающий суперглобальные переменные PHP, приобретает очень 
+		узкие и специфичные знания, зачастую с большими проблеами в них
+
+Во-вторых любые глобальные переменные считаются плохой практикой даже в процедурной парадигме 
+программирования, и едва ли приемлемы в объектно-ориентированном коде.
+	* Глобальные переменные легко превращают код в запутанный спагетти-код
+
+	PSR-7: HTTP Message Interfaces
+	
+Обе обозначенные выше проблемы решает PSR-7, который определяет объектно-ориентированные 
+интерфейсы для HTTP запроса и ответа.
+
+	Что такое PSR
+	
+PSR — это сокращение от PHP Standards Recommendations.
+	* Все PSR публикуются организацией PHP-FIG (Framework Integration Group), 
+		которая объединяет разработчиков различных фреймворков языка PHP
+	* Строго говоря, PSR не являются стандартом — тем не менее, 
+		этим рекомендациям стоит следовать
+		
+Основные PSR, о которых должен знать практикующий PHP-разработчик:
+	* PSR-1: Basic Coding Standard
+	* PSR-3: Logger Interface
+	* PSR-4: Autoloader
+	* PSR-7: HTTP message interfaces
+
+	Где взять PSR
+
+Интерфейсы PSR не являются частью интерпретатора PSR
+
+PSR определяет объектно-ориентированные интерфейсы и общие правила
+	* Правила можно прочитать на сайте организации PHP-FIG: https://www.php-fig.org/psr/psr-7/
+	* Интерфейсы доступны в пакетах, устанавливаемых через composer — например, 
+		в пакете psr/http-message (содержит интерфейсы из PSR-7)
+		- Установить этот пакет можно было бы так: composer require psr/http-message
+		- Но обычно устанавливать пакет не нужно
+		
+Пакеты composer, содержащие интерфейсы PSR, обычно не нужно устанавливать. 
+Вместо них устанавливают прикладные библиотеки, которые реализуют интерфейсы, объявленные в PSR.
+
+	Структура PSR-7
+
+RequestInterface и ResponseInterface
+
+PSR-7 определяет два интерфейса:
+	* Psr\Http\Message\RequestInterface для представления данных HTTP-запроса
+	* Psr\Http\Message\ResponseInterface для представления данных HTTP-ответа
+
+Эти интерфейсы соответствуют логической структуре HTTP-запроса и HTTP-ответа, 
+с учётом различных технических нюансов
+
+Краткое содержание RequestInterface:
+
+	interface RequestInterface extends MessageInterface
+	{
+		 // ... часть методов пропущена
+
+		 // HTTP Method
+		 public function getMethod(): string;
+
+		 // URI запроса (URL)
+		 public function getUri(): UriInterface;
+	}
+
+Краткое содержание ResponseInterface:
+
+	interface ResponseInterface extends MessageInterface
+	{
+		 // ... часть методов пропущена
+
+		 public function getStatusCode(): int;
+
+	}
+
+Оба интерфейса наследуются от MessageInterface, который определяет 
+общие свойства запросов и ответов:
+
+	interface MessageInterface
+	{
+		 // ... часть методов пропущена
+
+
+		 /**
+		  * @return string[][] - ассоциативный массив, отображающий имя
+		  *     заголовка HTTP-сообщения на список строк, составляющих
+		  *     значения этого заголовка (обычно значение одно)
+		  */
+		 public function getHeaders(): array;
+
+		 /**
+		  * @return string[] - список строк, составляющих значение
+		  *     заголовка с именем $name
+		  */
+		  public function getHeader($name): array;
+
+		 /**
+		  * @return string - значения заголовка в виде одной строки
+		  *     с запятой в качестве разделителя
+		  */
+		  public function getHeaderLine($name): string;
+
+		  /**
+		   * @return StreamInterface - объект, позволяющий прочитать
+		   *     тело HTTP-запроса
+		   */
+		  public function getBody(): StreamInterface;
+	}
+
+	Вспомогательные интерфейсы
+
+Вспомогательный интерфейс UriInterface определяет URI (URL) для HTTP-запроса:
+
+	interface UriInterface
+	{
+		 // ... часть методов пропущена
+
+		 // Схема URL, например, "https"
+		 public function getScheme(): string;
+
+		 // Значение заголовка "Host", например: "www.yandex.ru"
+		 public function getHost(): string;
+
+		 // Порт, например: 80
+		 public function getPort(): ?int;
+
+		 // URL Path, например: "/cart/add-product"
+		 public function getPath(): string;
+
+		 // URL Query, например: "?product=1824&clear=1"
+		 public function getQuery();
+	}
+
+Вспомогательный интерфейс StreamInterface определяет тело запроса или тело ответа в виде 
+потока данных, который можно прочитать однократно от начала до конца:
+
+	interface StreamInterface
+	{
+		 // ... часть методов пропущена
+
+		 // Читает тело запроса целиком в строку
+		 public function getContents(): string;
+	}
+
+Тело запроса или ответа можно читать фрагментами (как файл) или прочитать 
+целиком методом getContents().
+	* Разумеется, тело HTTP-сообщения может быть слишком большим для PHP-скрипта, 
+		поэтому большие HTTP-сообщения читать целиком не следует
+
+	ServerRequestInterface
+
+PSR-7 также определяет интерфейс Psr\Http\Message\ServerRequestInterface, который расширяет 
+интерфейс HTTP-запроса методами, учитывающими специфику обработки запросов интерпретатором PHP:
+
+	interface ServerRequestInterface extends RequestInterface
+	{
+		 // ... часть методов пропущена
+
+		 // Обычно хранит значения из переменной $_SERVER
+		 public function getServerParams(): array;
+
+		 // Обычно хранит значения из переменной $_COOKIE
+		 public function getCookieParams(): array;
+
+		 // Ассоциативный массив с параметрами из URL Query
+		 //
+		 // Например, для такого URL Query:
+		 //     "?product=1824&clear=1"
+		 //
+		 // Будет такой ассоциативный массив:
+		 // [
+		 //    'product' => '1824',
+		 //    'clear' => '1',
+		 // ]
+		 public function getQueryParams(): array;
+
+		 /**
+		  * @returns UploadedFileInterface[] - массив параметров
+		  *      файлов, загружаемых на сервер
+		  */
+		 public function getUploadedFiles(): array;
+	}
+
+	Реализации PSR-7
+
+	Микрофреймворк Slim
+
+Сайт фреймворка: https://www.slimframework.com/
+
+Slim — это микрофреймворк для PHP, который содержит лишь необходимый минимум для написания 
+объектно-ориентированного серверного Web-приложения
+	* Slim предоставляет только базовые средства, в том числе реализации интерфейсов 
+		ServerRequestInterface и ResponseInterface стандарта PSR-7
+	* Также Slim за счёт дополнительных пакетов позволяет использовать ещё несколько 
+		фундаментальных вещей — например, Twig-шаблоны
+
+За счёт простоты и правильной архитектуры микрофеймворк Slim хорош для учебных проектов. 
+Принципы, изученные на примере Slim, будут работать и для других современных PHP фреймворков.
+
+	Пример обработки запроса в Slim
+
+Исходный код примера: https://github.com/sergey-shambir/db-course-lab-3-wiki-backend
+
+Slim позволяет писать обработчики HTTP-запросов как в процедурном, так и в объектно-ориентированном стиле.
+
+В объектно-ориентированном стиле обработчик запроса может выглядеть, например, так:
+
+	<?php
+	declare(strict_types=1);
+
+	namespace App\Controller;
+
+	use App\Controller\Response\ArticleApiResponseFormatter;
+	use App\Model\Service\ServiceProvider;
+	use Psr\Http\Message\ResponseInterface;
+	use Psr\Http\Message\ServerRequestInterface;
+
+	class ArticleApiController
+	{
+		public function listArticles(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
+		{
+			$articles = ServiceProvider::getInstance()->getArticleQueryService()->listArticles();
+			$responseData = ArticleApiResponseFormatter::formatArticleSummaryList($articles);
+
+			return $this->success($response, $responseData);
+		}
+	}
+
+Здесь обработкой конкретного запроса будет заниматься метод listArticles():
+	* В параметре ServerRequestInterface $request он получит данные HTTP-запроса
+	* В параметре ResponseInterface $response он получит подготовленный пустой HTTP-ответ
+	* Метод должен вернуть объект ResponseInterface, заполненный параметрами HTTP-ответа
+
+	Фреймворк Symfony
+
+Сайт фреймворка: https://symfony.com/what-is-symfony
+
+Symfony — это большой и очень популярный фреймворк для PHP, позволяющий писать сложные 
+объектно-ориентированные серверные Web-приложения
+	* Современные версии Symfony предоставляют большой объёмом хорошо спроектированных модулей
+	* Многие сторонние проекты ориентируются на механики, реализованные в Symfony, 
+		либо используют некоторые модули Symfony
+
+Symfony многое умеет, но это не отменяет необходимости понимать, как работают механизмы, 
+доступные в Symfony. Для учебного проекта этот фреймворк может быть сложным (если у вас не 
+было опыта работы с ним).
+
+	Библиотека GuzzleHttp
+
+Сайт библиотеки: https://docs.guzzlephp.org/
+
+GuzzleHttp — самая популярная библиотека для отправки HTTP-запросов из PHP-скрипта.
+
+Другими словами:
+	* PHP-фреймворки, такие как Slim и Symfony, предназначены для работы PHP-приложения в роли 
+		бэкенда HTTP-сервера, то есть для обработки HTTP Request и отправки клиенту HTTP Response
+	* GuzzleHttp предназначен для отправки HTTP-запросов из PHP-скрипта, например, для обращения 
+		к сервису другой команды или к стороннему API, арендуемого у другой компании
+
+Отличие библиотеки от фреймворка в том, что фреймворк определяет структуру проекта в целом, 
+а также захватывает управление процессом обработки запроса. Библиотеки же служат лишь набором 
+инструментов, которые можно выборочно использовать в проекте.
