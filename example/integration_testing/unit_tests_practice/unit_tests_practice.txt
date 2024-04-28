@@ -1,0 +1,831 @@
+	Практика модульных тестов
+
+	Библиотека PHPUnit
+
+Для модульных тестов на PHP обычно используют библиотеку PHPUnit (хотя есть и иные варианты).
+
+В PHPUnit используется следующая терминология:
+	* Test case class — это специальный класс, который содержит несколько тестирующих методов
+		- Название класса должно заканчиваться суффиксом "Test", например, ImageConverterTest
+		- Класс должен наследоваться от PHPUnit\Framework\TestCase\TestCase
+		- Класс содержит серию методов, реализующих тестовые сценарии, а также вспомогательных методов
+	* Test method — это тестирующий метод
+		- Метод должен начинаться с префикса test, например, testFormatBytesSize()
+		- Метод должен быть публичным (модификатор public)
+
+	Проверка утверждений
+
+Базовый класс TestCase предоставляет множество функций с префиксом assert, называемых 
+функциями проверки утверждений.
+
+Примеры:
+	* Метод assertEquals($expected, $actual) проверяет равенство значений
+		- Опциональный параметр $delta позволяет игнорировать погрешность из-за 
+			округлений для чисел с плавающей точкой
+	* Метод assertTrue($condition) проверяет, что условие истинно
+	* Метод assertGreaterThan($expected, $actual) проверяет, что значение $actual 
+		строго больше значения $expected
+
+Полные сигнатуры методов:
+
+	public function assertEquals(
+	  float $expected,
+	  float $actual,
+	  string $message = '',
+	  float $delta = 0
+	);
+
+	public function assertTrue(
+	  bool $condition,
+	  string $message = ''
+	);
+
+	public function assertGreaterThan(
+	  mixed $expected,
+	  mixed $actual,
+	  string $message = ''
+	);
+
+Подробнее читайте в документации PHPUnit: 1. Утверждения:
+(https://phpunit-documentation-russian.readthedocs.io/ru/latest/assertions.html)
+
+	Составляем тест-план
+	
+Для примера возьмём задачу:
+	* Написать функцию, которая принимает количество байт (целое число) и возвращает строку в человекопонятном 
+		формате (например, "2 GB", "7 MB" или "14 B") с округлением вниз (например, 800 KB округляется до 1MB)
+
+В этой статье мы будем считать, что 1 килобайт = 1024 байта. Строго говоря, это неверно: такая единица измерения 
+называется кибибайт (KiB или КиБ). Мы пропустим этот нюанс для краткости.
+
+	Классы эквивалентности и граничные значения
+	
+Классы эквивалентности очевидно соответствуют единицам измерения для количества байт. 
+
+Какие единицы измерения мы должны поддерживать?
+
+Давайте начнём с поддержки четырёх единиц измерения:
+	Байты (B)
+	Килобайты (1 KB = 1024 B)
+	Мегабайты (1 MB = 1024 KB)
+	Гигабайты (1 GB = 1024 MB)
+	
+Какими могут быть граничные значения?
+
+Начнём с трёх вариантов:
+	Число 0
+	Числа 1024N, где N — натуральное число
+	Числа 1024N-1, где N — натуральное число
+
+	Тест-план
+
+Наконец, составим тест-план из двух сценариев:
+	* Проверка классов эквивалентности для всех единиц измерения
+	* Проверка граничных значений
+
+Для первого тестового сценария будут такие входные данные:
+
+Входные данные
+	Ожидаемый результат
+176
+	176 B
+1024
+	1 KB
+3 * 1024 ** 2 + 7
+	3 MB
+417 * 1024 ** 3
+	417 GB
+
+Для второго тестового сценария — такие:
+
+Входные данные
+	Ожидаемый результат
+0
+	0 B
+5 * 1024 ** 3 - 1
+	4 GB
+
+	Первая итерация TDD
+
+Мы будем следовать TDD на данном примере, чтобы познакомиться с данной концепцией.
+
+	Перед началом: реализация-пустышка
+
+Чтобы можно было написать первый тест, напишем реализацию-пустышку
+
+Добавим в проект файл src/Util/ByteUtil.php с классом ByteUtil:
+
+	<?php
+	declare(strict_types=1);
+
+	namespace App\Util;
+
+	class ByteUtil
+	{
+		public static function formatBytesSize(int $byteCount): string
+		{
+			return '1 B';
+		}
+	}
+
+Эта версия функции всегда возвращает строку 1 B, значит, она не пройдёт даже первый тест из нашего тест-плана.
+
+	Шаг 1. Реализуем тестовый сценарий
+
+Сначала мы реализуем сценарий, в котором будут все тесты на классы эквивалентности:
+
+Входные данные
+	Ожидаемый результат
+176
+	176 B
+1024
+	1 KB
+3 * 1024 ** 2 + 7
+	3 MB
+417 * 1024 ** 3
+	417 GB
+
+Добавим в проект файл Unit/Util/ByteUtilTest.php с классом ByteUtilTest:
+
+	<?php
+	declare(strict_types=1);
+
+	namespace App\Tests\Unit\Util;
+
+	use App\Util\ByteUtil;
+	use PHPUnit\Framework\TestCase;
+
+	class ByteUtilTest extends TestCase
+	{
+		public function testFormatBytesSizeWithSupportedUnits(): void
+		{
+			$this->assertEquals('176 B', ByteUtil::formatBytesSize(176));
+			$this->assertEquals('1 KB', ByteUtil::formatBytesSize(1024));
+			$this->assertEquals('3 MB', ByteUtil::formatBytesSize(3 * 1024 ** 2 + 7));
+			$this->assertEquals('417 GB', ByteUtil::formatBytesSize(417 * 1024 ** 3));
+		}
+	}
+
+Обратите внимание на название метода
+	* Метод называется testFormatBytesSizeWithSupportedUnits
+	* Читается так: «проверить formatBytesSize() с поддерживаемыми единицами измерения»
+
+Запустим  пользовательскую команду composer unit-tests, которая, в свою очередь, запустит phpunit...
+
+В результате получаем ошибку, ведь наша реализация ещё пуста.
+
+В сообщении phpunit обратим внимание на следующее:
+	* В выводе перечислены все упавшие тесты (в данном случае один тест)
+	* Для каждого упавшего теста написаны
+		- Имя набора тестов и тестового сценария (т.е. имя тестирующего класса и метода)
+		- Описание проваленного утверждения: Failed asserting that two strings are equal.
+		- Различие между ожидаемым (Expected) и фактическим (Actual) значениями
+		- Путь к файлу и номер строки, где было проваленное утверждение: .../tests/Unit/Util/ByteUtilTest.php:13
+	* В конце вывода написана статистика по всем тестам
+		- Tests: 1, Assertions: 1, Failures: 1.
+
+	Шаг 2. Обновляем реализацию, чтобы пройти тесты
+
+Вернёмся к методу ByteUtil::formatBytesSize и реализуем его с помощью серии ветвлений (if) 
+и ранних возвратов (англ. early returns):
+
+	public static function formatBytesSize(int $byteCount): string
+	{
+		if ($byteCount < 1024)
+		{
+			return $byteCount . ' B';
+		}
+		if ($byteCount < 1024 ** 2)
+		{
+			return $byteCount / 1024 . ' KB';
+		}
+		if ($byteCount < 1024 ** 3)
+		{
+			return $byteCount / (1024 ** 2) . ' MB';
+		}
+		return $byteCount / (1024 ** 3) . ' GB';
+	}
+
+Запустим тесты...
+
+Тесты не проходят! PHPUnit сообщает следующее:
+
+	1) App\Tests\Unit\Util\ByteUtilTest::testFormatBytesSizeWithSupportedUnits
+	Failed asserting that two strings are equal.
+	--- Expected
+	+++ Actual
+	@@ @@
+	-'3 MB'
+	+'3.0000066757202 MB'
+	
+* Обратите внимание на выражение: $byteCount / (1024 ** 2)
+* В этом выражении тип результата — float
+
+Подумайте, почему так получилось?
+
+	Жонглирование типами (Type Juggling)
+
+PHP — язык с динамической типизацией, и тип данных для результата выражения определяется динамически.
+	* Определить тип результата выражения можно, запустив интерпретатор php в интерактивном режиме командой php -a 
+		и выполнив команду echo с вызовом функции gettype(), которая возвращает название типа переменной
+	* Пример: echo gettype(1024 ** 2);
+
+Рассмотрим выражение 3 * 1024 ** 2 + 7 / (1024 ** 2) подробнее.
+
+Начнём со знаменателя 3 * 1024 ** 2 + 7:
+	* Результат выражения равен 3145735
+	* Тип результата выражения — integer
+
+Далее получаем деление числа 3145735 на 1024 ** 2:
+	* Число 3145735 не делится нацело на 1024 ** 2
+	* Поэтому интерпретатор PHP меняет тип результата выражения на float и сохраняет число, 
+		которое в десятичной системе счисления выглядит так: 3.0000066757202
+	* Это явление называется «жонглирование типами» (англ. type juggling)
+
+В результате функция formatByteCount возвращает строку '3.0000066757202 MB' вместо ожидаемой строки '3 MB'.
+
+Больше о жонглировании типами можно прочитать в статье Type Juggling на сайте php.engineer
+(https://www.php.engineer/type-juggling)
+
+	Исправляем реализацию
+
+Для исправления достаточно добавить оператор преобразования к типу int:
+
+	(int) ($byteCount / (1024 ** 2))
+	
+Либо использовать функцию floor, округляющую значение до ближайшего целого числа, меньшего чем данное значения:
+	
+	floor($byteCount / (1024 ** 2))
+	
+После исправления запустим тесты командой composer unit-tests...
+
+Тесты успешно пройдены!
+
+	Неучтённые сценарии
+
+Напомним, что после успешного прохождения тестов (шаг №2 в TDD) следует оценить изменения и проверить, нет ли 
+новых тестовых сценариев, не замеченных ранее:
+
+Напомним наши сценарии для классов эквивалентности:
+
+Входные данные
+	Ожидаемый результат
+176
+	176 B
+1024
+	1 KB
+3 * 1024 ** 2 + 7
+	3 MB
+417 * 1024 ** 3
+	417 GB
+
+Чего здесь недостаёт?
+
+	За гигабайтами есть и другие единицы измерения.
+
+С другой стороны, метод formatBytesSize(int $byteCount) принимает параметр типа int:
+	* На 64-битных архитектурах размер int составляет 8 байт или 64 бита
+	* Из них один бит отводится на знак числа (чтобы уметь хранить отрицательные числа)
+	* Следовательно, тип данных int в PHP на 64-битных архитектурах способен представить 
+		целые положительные числа в диапазоне от 0 до 2^63-1
+
+Таким образом, функция могла бы дополнительно форматировать:
+	терабайт (1024^4 или 2^40 байт)
+	петабайты (1024^5 или 2^50 байт)
+	эксабайты (1024^6 или 2^60 байт)
+
+Добавим их в тест-план, чтобы дополнить тесты в следующей итерации TDD:
+
+Входные данные
+	Ожидаемый результат
+176
+	176 B
+1024
+	1 KB
+3 * 1024 ** 2 + 7
+	3 MB
+417 * 1024 ** 3
+	417 GB
+117 * 1024 ** 4
+	117 TB
+999 * 1024 ** 5
+	999 PB
+7 * 1024 ** 6
+	7 EB
+
+	Шаг 3. Рефакторинг кода
+
+Шаг рефакторинга необязательный: его можно пропустить. Если же вы решили провести рефакторинг только 
+что написанного кода, то лучше зафиксировать существующие наработки в Git.
+
+Теперь, когда код защищён тестами, мы можем выполнить рефакторинг. Взгляните на реализацию:
+
+	class ByteUtil
+	{
+		public static function formatBytesSize(int $byteCount): string
+		{
+			if ($byteCount < 1024)
+			{
+				return $byteCount . ' B';
+			}
+			if ($byteCount < 1024 ** 2)
+			{
+				return (int) ($byteCount / 1024) . ' KB';
+			}
+			if ($byteCount < 1024 ** 3)
+			{
+				return (int) ($byteCount / (1024 ** 2)) . ' MB';
+			}
+			return (int) ($byteCount / (1024 ** 3)) . ' GB';
+		}
+	}
+
+Что плохого в этой реализации с точки зрения читаемости и сопровождаемости кода?
+
+Здесь много ветвлений, и в каждом из них можно допустить ошибку.
+
+Тесты, конечно, должны найти большинство возможных ошибок в этой функции, однако они не
+гарантируют полное отсутствие дефектов.
+
+Можно улучшить читаемость кода и уменьшить количество ветвей выполнения, используя циклы:
+
+	class ByteUtil
+	{
+		public static function formatBytesSize(int $byteCount): string
+		{
+			$units = ['B', 'KB', 'MB', 'GB'];
+			$unitIndex = 0;
+			$unitSize = 1;
+
+			while ($byteCount > 1024 * $unitSize)
+			{
+				$unitSize *= 1024;
+				++$unitIndex;
+			}
+			return (int) ($byteCount / $unitSize) . $units[$unitIndex];
+		}
+	}
+
+Посмотрите на код: в нём всё в порядке?
+
+Если на вид всё хорошо, то запустим тесты:
+
+Реализация содержит два дефекта:
+	* Не добавляется пробел между числом и единицей измерения
+	* Неверно форматируются 1024 байта, потому что в условии цикла используется 
+		оператор > вместо оператора >=
+		- Речь про цикл while ($byteCount > 1024 * $unitSize)
+
+Исправленная реализация:
+
+	class ByteUtil
+	{
+		public static function formatBytesSize(int $byteCount): string
+		{
+			$units = ['B', 'KB', 'MB', 'GB'];
+			$unitIndex = 0;
+			$unitSize = 1;
+
+			while ($byteCount >= 1024 * $unitSize)
+			{
+				$unitSize *= 1024;
+				++$unitIndex;
+			}
+			return (int)($byteCount / $unitSize) . ' ' . $units[$unitIndex];
+		}
+	}
+
+После исправления снова запустим тесты командой composer unit-tests...
+
+Тесты успешно пройдены!
+
+	Используем Data Provider для параметризации теста
+
+После улучшения реализации можно улучшить сам тест.
+
+Сейчас тест выглядит так:
+
+	class ByteUtilTest extends TestCase
+	{
+		public function testFormatBytesSizeWithSupportedUnits(): void
+		{
+			$this->assertEquals('176 B', ByteUtil::formatBytesSize(176));
+			$this->assertEquals('1 KB', ByteUtil::formatBytesSize(1024));
+			$this->assertEquals('3 MB', ByteUtil::formatBytesSize(3 * 1024 ** 2 + 7));
+			$this->assertEquals('417 GB', ByteUtil::formatBytesSize(417 * 1024 ** 3));
+		}
+	}
+
+Здесь повторяется один и тот же шаблон проверки утверждения:
+
+	$this->assertEquals(ожидание, ByteUtil::formatBytesSize(число_байт));
+
+Мы можем использовать Data Provider, чтобы разделить тест на два метода:
+	* Параметризуемый тестовый сценарий
+	* Метод, предоставляющий различные данные для тестового сценария
+
+В PHPUnit это делается следующими шагами:
+	* Импортировать класс атрибута DataProvider
+		- use PHPUnit\Framework\Attributes\DataProvider;
+	* Добавить в тестовый сценарий параметры
+		- public function testFormatBytesSizeWithSupportedUnits ($byteCount, $expected): void
+	* Добавить тестовому сценарию PHP-атрибут с названием метода, предоставляющего данные
+		- #[DataProvider ('getFormatBytesSizeWithSupportedUnitsData')]
+	* Написать статический метод, предоставляющий данные в виде многомерного массива
+		- Каждый вложенный массив используется как массив параметров тестового сценария для очередного запуска
+
+PHP-атрибуты появились в языке PHP с версии 8.0, а затем библиотека PHPUnit обзавелась атрибутом DataProvider. 
+В более старых версиях PHP и PHPUnit вместо атрибута #[DataProvider('methodName')] можно использовать комментарий 
+phpdoc с тегом @dataProvider.
+
+Итого файл с тестом выглядит так:
+
+	<?php
+	declare(strict_types=1);
+
+	namespace App\Tests\Unit\Util;
+
+	use App\Util\ByteUtil;
+	use PHPUnit\Framework\Attributes\DataProvider;
+	use PHPUnit\Framework\TestCase;
+
+	class ByteUtilTest extends TestCase
+	{
+		#[DataProvider('getFormatBytesSizeWithSupportedUnitsData')]
+		public function testFormatBytesSizeWithSupportedUnits($byteCount, $expected): void
+		{
+			$this->assertEquals($expected, ByteUtil::formatBytesSize($byteCount));
+		}
+
+		public static function getFormatBytesSizeWithSupportedUnitsData(): array
+		{
+			return [
+				[176, '176 B'],
+				[1024, '1 KB'],
+				[3 * 1024 ** 2 + 7, '3 MB'],
+				[417 * 1024 ** 3, '417 GB'],
+			];
+		}
+	}
+
+Здесь метод getFormatBytesSizeWithSupportedUnitsData() возвращает многомерный массив:
+	* Каждый вложенный массив — это один набор параметров для одного запуска тестового сценария
+	* Например, первый вложенный массив выглядит так: [176, '176 B']
+	* Первый запуск тестового сценария будет с такими же параметрами:
+		- $byteCount = 176
+		- $expected = '176 B'
+
+Таким образом мы разделяем тестовый сценарий и наборы данных для него.
+
+Снова запустим тесты командой composer unit-tests...
+
+Тесты успешно пройдены!
+
+	Вторая итерация TDD
+
+Итак, в алгоритме TDD мы завершили первую итерацию. Что дальше?
+
+Напомним, что на прошлой итерации TDD мы добавили в тест-план три теста для трёх дополнительных единиц 
+измерения, но не написали к ним тесты:
+
+Входные данные
+	Ожидаемый результат
+117 * 1024 ** 4
+	117 TB
+999 * 1024 ** 5
+	999 PB
+7 * 1024 ** 6
+	7 EB
+	
+Также у нас есть тесты на граничные значения
+
+Входные данные
+	Ожидаемый результат
+0
+	0 B
+5 * 1024 ** 3 - 1
+	4 GB	
+
+	Шаг 1. Реализуем тестовый сценарий
+
+Добавим три новых теста на единицы измерения:	
+
+	class ByteUtilTest extends TestCase
+	{
+		#[DataProvider('getFormatBytesSizeWithSupportedUnitsData')]
+		public function testFormatBytesSizeWithSupportedUnits($byteCount, $expected): void
+		{
+			$this->assertEquals($expected, ByteUtil::formatBytesSize($byteCount));
+		}
+
+		public static function getFormatBytesSizeWithSupportedUnitsData(): array
+		{
+			return [
+				[176, '176 B'],
+				[1024, '1 KB'],
+				[3 * 1024 ** 2 + 7, '3 MB'],
+				[417 * 1024 ** 3, '417 GB'],
+				[117 * 1024 ** 4, '117 TB'],
+				[999 * 1024 ** 5, '999 PB'],
+				[7 * 1024 ** 6, '7 EB'],
+			];
+		}
+	}	
+
+Снова запустим тесты командой composer unit-tests...	
+
+Тесты завершились с ошибкой:
+	* Реализация ещё не поддерживает такие единицы измерения.
+
+	Шаг 2. Обновляем реализацию, чтобы пройти тесты
+
+На прошлой итерации TDD мы рефакторили код, заменяя ветвления на цикл с массивом единиц измерения.
+
+Благодаря этому мы можем просто добавить три единицы измерения в массив $units:
+
+	class ByteUtil
+	{
+		public static function formatBytesSize(int $byteCount): string
+		{
+			$units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB'];
+			$unitIndex = 0;
+			$unitSize = 1;
+
+			while ($byteCount >= 1024 * $unitSize)
+			{
+				$unitSize *= 1024;
+				++$unitIndex;
+			}
+			return (int)($byteCount / $unitSize) . ' ' . $units[$unitIndex];
+		}
+	}
+
+Снова запустим тесты командой composer unit-tests...
+
+Тесты успешно пройдены!
+
+Новые тестовые сценарии
+
+Нам пока нечего добавить в тест-план.
+
+	Шаг 3. Рефакторинг кода
+
+Код реализации и код теста почти не изменились с прошлого шага и выглядят прилично.
+
+Поэтому пропустим рефакторинг...
+
+	Третья итерация TDD
+
+	Шаг 1. Реализуем тестовый сценарий
+
+Остались тесты на граничные значения:
+
+Входные данные
+	Ожидаемый результат
+0
+	0 B
+5 * 1024 ** 3 - 1
+	4 GB
+
+Давайте добавим их в тестовый сценарий!
+
+Погодите, мы не можем добавить эти тесты в этот сценарий:
+	* Метод называется testFormatBytesSizeWithSupportedUnits
+	* Читается так: «проверить formatBytesSize() с поддерживаемыми единицами измерения»
+	* Однако новые тесты касаются граничных значений, а не классов эквивалентности по единицам измерения
+
+Поэтому добавим новый тестовый сценарий, используя отдельный Data Provider:
+
+	class ByteUtilTest extends TestCase
+	{
+		#[DataProvider('getFormatBytesSizeWithSupportedUnitsData')]
+		public function testFormatBytesSizeWithSupportedUnits($byteCount, $expected): void
+		{
+			$this->assertEquals($expected, ByteUtil::formatBytesSize($byteCount));
+		}
+
+		// Новый тестовый сценарий
+		#[DataProvider('getFormatBytesSizeWithBoundaryValuesData')]
+		public function testFormatBytesSizeWithBoundaryValues($byteCount, $expected): void
+		{
+			$this->assertEquals($expected, ByteUtil::formatBytesSize($byteCount));
+		}
+
+		public static function getFormatBytesSizeWithSupportedUnitsData(): array
+		{
+			return [
+				[176, '176 B'],
+				[1024, '1 KB'],
+				[3 * 1024 ** 2 + 7, '3 MB'],
+				[417 * 1024 ** 3, '417 GB'],
+				[117 * 1024 ** 4, '117 TB'],
+				[999 * 1024 ** 5, '999 PB'],
+				[7 * 1024 ** 6, '7 EB'],
+			];
+		}
+
+		// Новый data provider
+		public static function getFormatBytesSizeWithBoundaryValuesData(): array
+		{
+			return [
+				[0, '0 B'],
+				[5 * 1024 ** 3 - 1, '4 GB'],
+			];
+		}
+	}
+
+Снова запустим тесты командой composer unit-tests...
+
+Тесты успешно пройдены!
+
+	Шаг 2. Обновляем реализацию, чтобы пройти тесты
+
+Тесты пройдены, поэтому мы можем ничего добавлять в реализацию.
+
+Однако мы всё ещё должны проверить: нет ли новых тестовых сценариев?
+
+Взгляните на тесты:
+
+Входные данные
+	Ожидаемый результат
+0
+	0 B
+5 * 1024 ** 3 - 1
+	4 GB
+	
+Взгляните на объявлениие тестируемого метода:
+
+	public static function formatBytesSize(int $byteCount): string
+	
+Подумайте: может быть, мы что-то упустили среди граничных значений?
+
+Мы не проверили работу метода с отрицательными числами!
+
+	Поддержка отрицательных чисел
+
+Отрицательных размеров файлов не бывает! Таким образом, отрицательные числа явно не входят в область допустимых значений
+
+Что в таком случае должен делать метод, получив на входе отрицательное число?
+
+На практике возможны варианты:
+	* Можно выбросить исключение, если передан отрицательный $bytesCount
+	* Можно прогнорировать проблему, если метод возвращает какой-либо результат, а не завершается с ошибкой
+	* Можно добавить проверку и печатать '0 B' для отрицательных размеров
+
+Какой способ лучше с точки зрения надёжности кода?
+
+Отрицательных размеров в байтах не бывает, поэтому лучше выбросить исключение класса InvalidArgumentException.
+
+	Обновляем тест-план
+
+Добавляем в тест-план новую категорию тестов — негативные тесты недопустимых значений:
+
+Входные данные
+	Ожидаемый результат
+-1
+	Исключение InvalidArgumentException
+-1024 ** 2
+	Исключение InvalidArgumentException
+
+	Шаг 3. Рефакторинг кода
+
+Пропускаем данный шаг, т.к. реализация не изменилась
+
+	Четвёртая итерация TDD
+
+У нас остались негативные тесты на отрицательные числа, добавленные на прошлой итерации:
+
+	Шаг 1. Реализуем тестовый сценарий
+
+Как проверить, что вызов метода бросает исключение?
+
+У PHPUnit есть готовое решение, описанное в разделе Expecting Exceptions документации.
+(https://docs.phpunit.de/en/10.5/writing-tests-for-phpunit.html)
+
+Достаточно в начале теста вызвать метод expectException(class):
+
+	$this->expectException(InvalidArgumentException::class);
+
+Мы не должны делать это в существующих тестовых сценариях, поскольку они отвечают за другое:
+	* testFormatBytesSizeWithSupportedUnits() проверяет всевозможные единицы измерения
+	* testFormatBytesSizeWithBoundaryValues() проверяет граничные, но допустимые значения
+
+Что же делать?
+
+Добавим новый тестовый сценарий, используя отдельный Data Provider:
+
+	class ByteUtilTest extends TestCase
+	{
+		#[DataProvider('getFormatBytesSizeWithSupportedUnitsData')]
+		public function testFormatBytesSizeWithSupportedUnits($byteCount, $expected): void
+		{
+			$this->assertEquals($expected, ByteUtil::formatBytesSize($byteCount));
+		}
+
+		#[DataProvider('getFormatBytesSizeWithBoundaryValuesData')]
+		public function testFormatBytesSizeWithBoundaryValues($byteCount, $expected): void
+		{
+			$this->assertEquals($expected, ByteUtil::formatBytesSize($byteCount));
+		}
+
+		// Новый тестовый сценарий
+		#[DataProvider('getFormatBytesSizeWithInvalidValuesData')]
+		public function testFormatBytesSizeWithInvalidValues($byteCount): void
+		{
+			$this->expectException(\InvalidArgumentException::class);
+			ByteUtil::formatBytesSize($byteCount);
+		}
+
+		public static function getFormatBytesSizeWithSupportedUnitsData(): array
+		{
+			return [
+				[176, '176 B'],
+				[1024, '1 KB'],
+				[3 * 1024 ** 2 + 7, '3 MB'],
+				[417 * 1024 ** 3, '417 GB'],
+				[117 * 1024 ** 4, '117 TB'],
+				[999 * 1024 ** 5, '999 PB'],
+				[7 * 1024 ** 6, '7 EB'],
+			];
+		}
+
+		public static function getFormatBytesSizeWithBoundaryValuesData(): array
+		{
+			return [
+				[0, '0 B'],
+				[5 * 1024 ** 3 - 1, '4 GB'],
+			];
+		}
+
+		// Новый data provider
+		public static function getFormatBytesSizeWithInvalidValuesData(): array
+		{
+			return [
+				[-1],
+				[-1024 ** 2, '0 B'],
+			];
+		}
+	}
+
+Снова запустим тесты командой composer unit-tests...
+
+Тесты провалены!
+
+	Шаг 2. Обновляем реализацию, чтобы пройти тесты
+
+Добавим проверку в начале метода:
+
+	class ByteUtil
+	{
+		public static function formatBytesSize(int $byteCount): string
+		{
+			if ($byteCount < 0)
+			{
+				throw new \InvalidArgumentException("Invalid size in bytes: $byteCount");
+			}
+
+			$units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB'];
+			$unitIndex = 0;
+			$unitSize = 1;
+
+			while ($byteCount >= 1024 * $unitSize)
+			{
+				$unitSize *= 1024;
+				++$unitIndex;
+			}
+			return (int)($byteCount / $unitSize) . ' ' . $units[$unitIndex];
+		}
+	}
+
+Снова запустим тесты командой composer unit-tests...
+
+Тесты успешно пройдены!
+
+	Новые тестовые сценарии
+
+На этот раз нам нечего добавить.
+
+	Шаг 3. Рефакторинг кода
+
+Не видно потребности в рефакторинге.
+
+	Подытожим
+
+* Мы реализовали и успешно прошли все тесты из нашего тест-плана — значит, мы можем завершить цикл TDD.
+
+* Мы подробно разобрали как возможности PHPUnit для написания модульных тестов, так и процесс разработки 
+	кода через тестирование по каноническому варианту TDD.
+
+	Упражнение для внимательных
+
+Подумайте: почему мы добавляем в тест-план ранее неучтённые сценарии именно после шага №2 
+(т.е. после обновления реализации модуля)?
+
+Дело в том, что до написания кода модуля мы воспринимаем его чёрный ящик — то есть не знаем точно, 
+как этот модуль будет работать.
+
+После написания кода модуль становится белым ящиком, то есть мы знаем все детали реализации и можем 
+указать на пробелы начальных предположениях, на которых построен тест-план.
+
+Кроме того, успешное прохождение тестов — это приятный момент, а на позитивной ноте легче искать 
+потенциальные проблемы в коде.

@@ -1,0 +1,934 @@
+	Транзакции в ООП
+
+В объектно-ориентированных программах работа с данными обычно выстроена иначе, поэтому и 
+транзакции используются по-другому.
+
+Мы рассмотрим биллинг мобильного оператора в объектно-ориентированном стиле в качестве примера.
+
+	Постановка задачи
+
+Напомним задачу из прошлой статьи.
+
+Региональный мобильный оператор хранит личный счёт клиента, в котором указаны:
+	* Номер телефона
+	* Баланс счёта в рублях
+	* Остатки минут и СМС
+
+Также оператор поддерживает переводы денег между личными счетами клиентов без комиссии, 
+при этом каждая операция перевода денег должна быть записана в базу данных.
+
+	Способы работы с моделью
+
+Смешение логики и доступа к данным
+
+В примере из прошлой статьи, написанном в процедурном стиле, вычитание суммы происходило в 
+SQL-запросе UPDATE:
+
+	UPDATE account
+	SET balance = balance + :amount
+	WHERE phone = :to_phone
+
+Получается, что логика выполнения операции перенесена на слой доступа к данным 
+(Persistence Layer), и даже проверка баланса выполнялась непосредственно перед 
+UPDATE следующим образом:
+
+	$stmt = $connection->prepare(
+		<<<SQL
+		SELECT
+		  balance
+		FROM account
+		  WHERE phone = :from_phone
+		SQL
+	);
+	$stmt->execute(['from_phone' => $fromPhone]);
+	$balance = $stmt->fetchColumn();
+
+	if ($balance < $amount)
+	{
+		throw new \LogicException("
+			Cannot transfer money: account $fromPhone balance is less than transfer amount $amount
+		");
+	}
+
+Смешение логики и доступа к данным не обязательно для процедурного стиля, 
+но встречается часто.
+
+Иногда, к сожалению, тот же стиль встречается в объектно-ориентированных программах — 
+это не только нарушает базовые принципы объектно-ориентированного стиля, но и сильно 
+ухудшает сопровождаемость кода в долгосрочной перспективе.
+
+	Разделение логики и доступа к данным
+
+Для объектно-ориентированных программ следует разделять логику и доступ к данным.
+
+Иначе говоря, операция над балансом аккаунта выполняется в три шага:
+	* Прочитать данные из базы данных в объекты моделей
+	* Выполнить операции над моделями (т.е. над данными в памяти)
+	* Записать новые данные моделей в базу данных
+
+Другими словами, в объектно-ориентированной программе изменения в моделях определяют 
+изменения данных в базе данных, а не наоборот.
+
+Прямая модификация данных в обход объектов моделей — например, запросами UPDATE — 
+недопустима в объектно-ориентированной программе, за исключением особых случаев, 
+оговоренных с теми, кто отвечает за архитектуру этой программы.
+
+	Архитектура программы
+
+Мы не будем рассматривать слой представления, т.к. контроллеры HTTP-запросов не интересуют 
+нас в данной теме.
+
+Остальную часть отображает следующая UML-диаграмма классов: (см. uml_1.png)
+
+На диаграмме можно увидеть следующие классы:
+	* Account — ключевая модель предметной области, моделирует аккаунт клиента 
+		мобильного оператора
+	* AccountBalanceTransfer — вспомогательная модель, нужна только для фиксации 
+		фактов перевода денег
+		- Эта модель анемичная, то есть не содержит логики сложнее методов для 
+			получения и установки свойств (англ. getters / setters)
+	* AccountService — класс уровня приложения, ответственный за операции создания 
+		аккаунта и перевода денег
+	* AccountRepository и AccountBalanceTransferRepository — репозитории для 
+		соответствующих моделей
+		- Напомним, что в рамках шаблона проектирования «Репозиторий» работа с 
+			базой данных выполняется классом-репозиторием
+		- Класс-репозиторий использует метафору персистентной коллекции объектов и 
+			инкапсулирует в себе взаимодействие с базой данных для чтения, 
+			сохранения и удаления моделей
+
+	Класс соединения
+
+В объектно-ориентированной программе вместо прямой работы с объектами класса PDO обычно 
+добавляется промежуточный класс Connection, с которым работа с соединением становится проще:
+(см. connection.png)
+
+	Шаблон «Вложенные транзакции»
+
+Данный класс соединения реализует шаблон проектирования «Вложенные транзакции» 
+(англ. Nested Transactions):
+	* Это означает, что клиентский код может несколько раз начинать транзакцию 
+		и завершать транзакцию
+	* Класс Connection сам определит, когда действительно нужно вызывать методы 
+		класса PDO для управления транзакциями
+
+Это реализуется с помощью счётчика $transactionLevel:
+
+	public function beginTransaction(): void
+	{
+		if ($this->transactionLevel === 0)
+		{
+			$this->pdo->beginTransaction();
+		}
+		++$this->transactionLevel;
+	}
+
+	public function commit(): void
+	{
+		if ($this->transactionLevel <= 0)
+		{
+			throw new \RuntimeException('Cannot call ' . __METHOD__ . ': there is no open transaction');
+		}
+
+		--$this->transactionLevel;
+		if ($this->transactionLevel === 0)
+		{
+			$this->pdo->commit();
+		}
+	}
+
+	public function rollback(): void
+	{
+		if ($this->transactionLevel <= 0)
+		{
+			throw new \RuntimeException('Cannot call ' . __METHOD__ . ': there is no open transaction');
+		}
+
+		--$this->transactionLevel;
+		if ($this->transactionLevel === 0)
+		{
+			$this->pdo->rollBack();
+		}
+	}
+
+	Модель Account
+	
+Модель Account содержит конструкторы, методы для получения свойств и метод transferMoney, 
+который оперирует над данными в памяти:
+
+	class Account
+	{
+		public function __construct(
+			private string $phone,
+			private float $balance = 0.0,
+			private int $smsCount = 0,
+			private int $minutesCount = 0
+		)
+		{
+		}
+
+		public function transferMoney(Account $targetAccount, float $amount): void
+		{
+			if ($this->balance < $amount)
+			{
+				throw new \LogicException("
+					Cannot transfer money: account {$this->phone} 
+					balance is less than transfer amount $amount
+				");
+			}
+
+			$this->balance -= $amount;
+			$targetAccount->balance += $amount;
+		}
+
+		public function getPhone(): string
+		{
+			return $this->phone;
+		}
+		// ... и другие методы-геттеры (getters)
+	}
+
+Обратите внимание: в объектно-ориентированной программе операция вычитания суммы перевода из 
+баланса счёта содержится в классе модели, а не в SQL-запросе UPDATE.
+
+	Репозиторий AccountRepository
+
+Класс репозитория реализует два метода — поиск модели Account по номеру телефона 
+и сохранение модели Account.
+
+В модели Account используется естественный ключ phone, а не суррогатный целочисленный 
+ключ, поэтому репозиторий отличается от примеров из прошлых статей двумя деталями:
+	* Нет необходимости получать у PDO значение LAST_INSERT_ID() и записывать его в 
+		модель — номер телефона известен заранее
+	* Возникает вопрос: как отличить новый аккаунт от существующего при сохранении, 
+		чтобы выбрать между запросами INSERT и UPDATE?
+
+Посмотрите на реализацию:
+
+	class AccountRepository
+	{
+		public function findByPhone(string $phone): ?Account
+		{
+			$connection = ConnectionProvider::getConnection();
+			$result = $connection->execute(
+				<<<SQL
+				SELECT
+				  phone,
+				  balance,
+				  sms_count,
+				  minutes_count
+				FROM account
+				WHERE phone = :phone
+				SQL,
+				[':phone' => $phone]
+			)->fetch(\PDO::FETCH_ASSOC);
+
+			return $result ? $this->hydrateAccount($result) : null;
+		}
+
+		public function store(Account $account): void
+		{
+			$connection = ConnectionProvider::getConnection();
+			$connection->execute(
+				<<<SQL
+				INSERT INTO account
+				  (phone, balance, sms_count, minutes_count)
+				VALUES
+				  (:phone, :balance, :sms_count, :minutes_count)
+				ON DUPLICATE KEY UPDATE
+				  balance = VALUES(balance),
+				  sms_count = VALUES(sms_count),
+				  minutes_count = VALUES(minutes_count)
+				SQL,
+				[
+					':phone' => $account->getPhone(),
+					':balance' => $account->getBalance(),
+					':sms_count' => $account->getSmsCount(),
+					':minutes_count' => $account->getMinutesCount(),
+				]
+			);
+		}
+
+		private function hydrateAccount(array $result): Account
+		{
+			return new Account(
+				phone: $result['phone'],
+				balance: (float)$result['balance'],
+				smsCount: (int)$result['sms_count'],
+				minutesCount: (int)$result['minutes_count']
+			);
+		}
+	}
+
+	INSERT ... ON DUPLICATE KEY UPDATE
+
+Обратите внимание, что метод store() репозитория не выбирает между INSERT и UPDATE — 
+вместо этого он всегда выбирает специальную форму INSERT с конструкцией ON DUPLICATE KEY UPDATE.
+
+Эту технику в базах данных называют UPSERT (объединение слов INSERT и UPDATE). 
+В случае MySQL её иногда называют INSERT ODKU (сокращение от ON DUPLICATE KEY UPDATE).
+
+Рассмотрим запрос подробнее:
+
+	INSERT INTO account
+	  (phone, balance, sms_count, minutes_count)
+	VALUES
+	  (:phone, :balance, :sms_count, :minutes_count)
+	ON DUPLICATE KEY UPDATE   
+	  balance = VALUES(balance),
+	  sms_count = VALUES(sms_count),
+	  minutes_count = VALUES(minutes_count)
+
+Этот запрос выполняет либо вставку, либо обновление записи, если строка таблицы с 
+таким ключом уже существует
+	* Такое поведение включается конструкцией ON DUPLICATE KEY UPDATE
+	* После этой конструкции следует блок присваиваний, аналогичный блоку 
+		SET в запросах UPDATE
+	* В блоке присваиваний можно использовать специальную функцию VALUES() — 
+		эта функция для указанной колонки возвращает значение, 
+		которое должно было вставиться в новой строке таблицы
+
+Другими словами, вместо VALUES(balance) в данном случае мы могли указать 
+просто параметр :balance
+
+	INSERT INTO account
+	  (phone, balance, sms_count, minutes_count)
+	VALUES
+	  (:phone, :balance, :sms_count, :minutes_count)
+	ON DUPLICATE KEY UPDATE
+	  balance = :balance,
+	  sms_count = :sms_count,
+	  minutes_count = :minutes_count
+
+Однако функция VALUES() делает запрос более простым в понимании, т.к. читающему код 
+она сообщает: «записываем в уже существующую строку то же, что вставили бы в новую».
+
+	Класс AccountService
+
+Класс реализует основные операции над сущностью Account — в нашем примере это создание 
+аккаунта (createAccount) и перевод денег (transferMoney).
+
+Реализация transferMoney построена по следующему алгоритму:
+	* Найти оба аккаунта — отправителя и получателя перевода — в репозитории 
+		по номеру телефона
+	* Вызвать метод transferMoney() у объекта класса Account, 
+		соответствующего отправителю перевода
+	* Сохранить результат в репозиторий
+
+Кроме того, метод создаёт и записывает в отдельный репозиторий вспогательную модель 
+AccountBalanceTransfer, которая лишь фиксирует факт перевода и не влияет на результат.
+
+Код класса AccountService:
+
+	readonly class AccountService
+	{
+		public function __construct(
+			private AccountRepository $accountRepository,
+			private AccountBalanceTransferRepository $accountBalanceTransferRepository
+		)
+		{
+		}
+
+		public function createAccount(string $phone, float $balance = 0.0): void
+		{
+			$account = new Account($phone, $balance);
+			$this->accountRepository->store($account);
+		}
+
+		public function transferMoney(string $fromPhone, string $toPhone, float $amount): void
+		{
+			$fromAccount = $this->accountRepository->findByPhone($fromPhone);
+			if (!$fromAccount)
+			{
+				throw new \InvalidArgumentException("No account with phone $fromPhone");
+			}
+
+			$toAccount = $this->accountRepository->findByPhone($toPhone);
+			if (!$toAccount)
+			{
+				throw new \InvalidArgumentException("No account with phone $toPhone");
+			}
+
+
+			$fromAccount->transferMoney($toAccount, $amount);
+			$this->accountRepository->store($fromAccount);
+			$this->accountRepository->store($toAccount);
+
+			$transfer = new AccountBalanceTransfer($fromPhone, $toPhone, $amount);
+			$this->accountBalanceTransferRepository->add($transfer);
+		}
+	}
+
+	Интеграционный тест
+
+Для проверки работоспособности кода и для демонстрации способа использования мы можем написать 
+компонентный интеграционный тест для класса AccountService.
+
+Тест использует возможности PHPUnit и наследуется от класса AbstractDatabaseTestCase, 
+описанного в предудыщей теме «Интеграционные тесты».
+
+Реализация компонентного интеграционного теста содержит:
+	* Создание объекта AccountService в методе setUp()
+		- Напомним, что в PHPUnit этот метод вызвается перед каждым тестирующим методом 
+			(а tearDown — после каждого тестирующего метода)
+	* Проверку бизнес-сценария перевода денег в тестирующем методе testTransferMoney()
+		- Напомним, что в PHPUnit тестирующие методы должны иметь префикс test в названии 
+			и модификатор доступа public
+	* Вспомогательный метод assertAccount(), проверяющий данные аккаунта
+
+	<?php
+	declare(strict_types=1);
+
+	namespace App\Tests\Component;
+
+	use App\Application\AccountService;
+	use App\Database\AccountBalanceTransferRepository;
+	use App\Database\AccountRepository;
+	use App\Database\ConnectionProvider;
+	use App\Domain\Account;
+	use App\Tests\Common\AbstractDatabaseTestCase;
+
+	class AccountServiceTest extends AbstractDatabaseTestCase
+	{
+		private AccountRepository $accountRepository;
+		private AccountBalanceTransferRepository $accountBalanceTransferRepository;
+		private AccountService $accountService;
+
+		protected function setUp(): void
+		{
+			parent::setUp();
+			$this->accountRepository = new AccountRepository();
+			$this->accountBalanceTransferRepository = new AccountBalanceTransferRepository();
+			$this->accountService = new AccountService(
+				ConnectionProvider::getConnection(),
+				$this->accountRepository,
+				$this->accountBalanceTransferRepository
+			);
+		}
+
+		public function testTransferMoney(): void
+		{
+			$fromPhone = '+78362685453';
+			$toPhone = '+78362685445';
+
+			$this->accountService->createAccount($fromPhone, 600);
+			$this->accountService->createAccount($toPhone, 100);
+			$this->accountService->transferMoney($fromPhone, $toPhone, 400);
+
+			$fromAccount = $this->accountRepository->findByPhone($fromPhone);
+			$toAccount = $this->accountRepository->findByPhone($toPhone);
+			$this->assertAccount($fromAccount, phone: $fromPhone, balance: 200);
+			$this->assertAccount($toAccount, phone: $toPhone, balance: 500);
+		}
+
+		private function assertAccount(
+			Account $account, 
+			string $phone, 
+			float $balance, 
+			int $smsCount = 0, 
+			int $minutesCount = 0
+		): void
+		{
+			$this->assertEquals($phone, $account->getPhone());
+			$this->assertEquals($balance, $account->getBalance());
+			$this->assertEquals($smsCount, $account->getSmsCount());
+			$this->assertEquals($minutesCount, $account->getMinutesCount());
+		}
+	}
+
+	Добавляем транзакции
+
+Шаблон работы с транзакцией
+
+Базовый шаблон кода для работы с транзакцией пока что остаётся прежним 
+и в объектно-ориентированном стиле:
+
+	$connection->beginTransaction();
+	try
+	{
+		// ... выполнение операций над данными
+		$connection->commit();
+	}
+	catch (\Throwable $exception)
+	{
+		$connection->rollBack();
+		throw $exception;
+	}
+
+	Размещение кода
+
+Напомним, как выглядит метод transferMoney() класса AccountService:
+
+	readonly class AccountService
+	{
+		public function transferMoney(string $fromPhone, string $toPhone, float $amount): void
+		{
+			$fromAccount = $this->accountRepository->findByPhone($fromPhone);
+			if (!$fromAccount)
+			{
+				throw new \InvalidArgumentException("No account with phone $fromPhone");
+			}
+
+			$toAccount = $this->accountRepository->findByPhone($toPhone);
+			if (!$toAccount)
+			{
+				throw new \InvalidArgumentException("No account with phone $toPhone");
+			}
+
+			$fromAccount->transferMoney($toAccount, $amount);
+			$this->accountRepository->store($fromAccount);
+			$this->accountRepository->store($toAccount);
+
+			$transfer = new AccountBalanceTransfer($fromPhone, $toPhone, $amount);
+			$this->accountBalanceTransferRepository->add($transfer);
+		}
+	}
+
+Возникают вопросы:
+	* Сколько должно быть транзакций?
+	* Где они начинаются и заканчиваются?
+	* Где размещать код управления транзакцией — в AccountRepository, 
+		в AccountBalanceTransferRepository или в AccountService?
+
+Напомним, что словом транзакция обозначают операцию, которая может выполняться только 
+полностью либо не выполняться вовсе.
+
+Следовательно:
+	* Транзакция должна быть одна на весь метод transferMoney()
+	* Транзакция может начинаться либо перед первой операцией чтения из базы данных, 
+		либо перед первой операцией записи
+		- Позже мы обсудим соображения о плюсах и минусах обоих вариантов
+	* Код управления транзакцией должен быть в AccountService, 
+		где и происходит управление операцией в целом
+
+Новая версия кода
+
+В новой версии AccountService внесены два изменения:
+	* В конструктор сервиса передаётся объект класса Connection
+	* В методе transferMoney() появилось управление транзакцией:
+
+	readonly class AccountService
+	{
+		public function __construct(
+			private Connection $connection,
+			private AccountRepository $accountRepository,
+			private AccountBalanceTransferRepository $accountBalanceTransferRepository
+		)
+		{
+		}
+
+		// Вторая версия: с транзакцией
+		public function transferMoney(string $fromPhone, string $toPhone, float $amount): void
+		{
+			$this->connection->beginTransaction();
+			try
+			{
+				$fromAccount = $this->accountRepository->findByPhone($fromPhone);
+				if (!$fromAccount)
+				{
+					throw new \InvalidArgumentException("No account with phone $fromPhone");
+				}
+
+				$toAccount = $this->accountRepository->findByPhone($toPhone);
+				if (!$toAccount)
+				{
+					throw new \InvalidArgumentException("No account with phone $toPhone");
+				}
+
+				$fromAccount->transferMoney($toAccount, $amount);
+				$this->accountRepository->store($fromAccount);
+				$this->accountRepository->store($toAccount);
+
+				$transfer = new AccountBalanceTransfer($fromPhone, $toPhone, $amount);
+				$this->accountBalanceTransferRepository->add($transfer);
+
+				$this->connection->commit();
+			}
+			catch (\Throwable $exception)
+			{
+				$this->connection->rollBack();
+				throw $exception;
+			}
+		}
+	}
+
+	Рефакторинг управления транзакциями
+
+Посмотрим на результат с точки зрения архитектурной правильности, 
+а также сопровождаемости и читаемости кода
+	* Могут возникать мысли, что транзакции в AccountService — это плохо, т.к. класс относится 
+		к слою Application, а транзакции — это детали, связанные с базой данных
+		- На самом деле нет: слово «транзакция» в широком смысле обозначает то же, что и транзакции 
+			в контексте баз данных
+		- Прямую зависимость от слоя работы с данными можно было бы устранить с помощью интерфейса 
+			(согласно принципу Inversion of Control)
+	* С другой стороны, мы смешали детали управления транзакцией с кодом управления 
+		операцией передачи денег
+		- В реальном проекте кто-нибудь обязательно ошибётся, копируя в каждой операции один и тот 
+			же шаблон кода работы с транзакцией
+
+	Функция высшего порядка
+
+Напомним ещё раз шаблон кода, использующего транзакцию:
+
+	$connection->beginTransaction();
+	try
+	{
+		// ... выполнение операций над данными
+		$connection->commit();
+	}
+	catch (\Throwable $exception)
+	{
+		$connection->rollBack();
+		throw $exception;
+	}
+
+	Что если вместо комментария мы подставим произвольную функцию, переданную параметром?
+
+В таком случае мы можем весь шаблон управления транзакции поместить в функцию или метод, 
+а функцию с кодом операции передавать параметром.
+	* Функции, которые способны принимать другие функции в качестве входящих параметров, 
+		называют функциями высшего порядка.
+
+	Шаг 1: метод doWithTransaction
+
+Добавим классу новый метод:
+
+	/**
+	 * Метод выполняет переданную функцию внутри открытой транзакции,
+	 *  в конце вызывая COMMIT при успешном завершении
+	 *  либо ROLLBACK при исключении.
+	 *
+	 * @param callable $action - функция, которую нужно выполнить
+	 * @return void
+	 */
+	private function doWithTransaction(callable $action): void
+	{
+		$this->connection->beginTransaction();
+		try
+		{
+			$action();
+			$this->connection->commit();
+		}
+		catch (\Throwable $exception)
+		{
+			$this->connection->rollBack();
+			throw $exception;
+		}
+	}
+
+	Шаг 2: метод transferMoneyImpl
+
+Выделим в новый приватный метод код операции без управления транзакциями базы данных:
+
+	private function transferMoneyImpl(string $fromPhone, string $toPhone, float $amount): void
+	{
+		$fromAccount = $this->accountRepository->findByPhone($fromPhone);
+		if (!$fromAccount)
+		{
+			throw new \InvalidArgumentException("No account with phone $fromPhone");
+		}
+
+		$toAccount = $this->accountRepository->findByPhone($toPhone);
+		if (!$toAccount)
+		{
+			throw new \InvalidArgumentException("No account with phone $toPhone");
+		}
+
+
+		$fromAccount->transferMoney($toAccount, $amount);
+		$this->accountRepository->store($fromAccount);
+		$this->accountRepository->store($toAccount);
+
+		$transfer = new AccountBalanceTransfer($fromPhone, $toPhone, $amount);
+		$this->accountBalanceTransferRepository->add($transfer);
+	}
+
+	Шаг 3: метод transferMoney
+
+* Функции, которые можно сохранять в переменные или передавать в качестве параметра, 
+	называют функциями первого класса
+
+В современном PHP есть три основных способа передать функцию как параметр другой функции:
+	* Замыкание в виде анонимной функции, созданное с помощью ключевого слова function
+		Документация: Anonymous functions 
+		(https://www.php.net/manual/en/functions.anonymous.php)
+	* Замыкание в виде стрелочной функции, созданное с помощью ключевого слова fn
+		Документация: Arrow Functions 
+		(https://www.php.net/manual/en/functions.arrow.php)
+	* Метод класса, используемый с троеточием (...) вместо параметров
+		Документация: First class callable syntax 
+		(https://www.php.net/manual/en/functions.first_class_callable_syntax.php)
+
+* Замыкание (англ. Closure) — это особый вид функции, которая создаётся внутри другой (внешней) 
+функции каждый раз при выполнении внешней функции и может захватывать (англ. capture) 
+переменные внешней функции
+
+С замыканием в виде анонимной функции метод transferMoney() выглядит так:
+
+	public function transferMoney(string $fromPhone, string $toPhone, float $amount): void
+	{
+		$this->doWithTransaction(
+			function () use ($fromPhone, $toPhone, $amount) {
+				// Можно убрать метод transferMoneyImpl,
+				// Встатвив сюда его код
+				$this->transferMoneyImpl($fromPhone, $toPhone, $amount);
+			}
+		);
+	}
+
+В анонимных функциях в PHP слово use отвечает за захват параметров внешней функции в замыкание.
+
+С замыканием в виде стрелочной функции метод выглядит иначе:
+
+	public function transferMoney(string $fromPhone, string $toPhone, float $amount): void
+	{
+		$this->doWithTransaction(
+			fn() => $this->transferMoneyImpl($fromPhone, $toPhone, $amount)
+		);
+	}
+
+Стрелочные функции имеют два отличия от анонимных функций:
+	* Тело стрелочной функции — это одно выражение, а не блок кода, как в анонимной функции
+	* Слово use для стрелочных функций не нужно, потому что все параметры внешней функции автоматически 
+		захватываются в замыкание.
+
+	Реализация со стрелочной функцией
+
+Итоговый вариант со стрелочной функцией и отдельным методом transferMoneyImpl выглядит так:
+
+	readonly class AccountService
+	{
+		// ... конструктор и другие методы
+
+		public function transferMoney(string $fromPhone, string $toPhone, float $amount): void
+		{
+			$this->doWithTransaction(
+				fn() => $this->transferMoneyImpl($fromPhone, $toPhone, $amount)
+			);
+		}
+
+		/**
+		 * Метод выполняет переданную функцию внутри открытой транзакции,
+		 * в конце вызывая COMMIT при успешном завершении
+		 * либо ROLLBACK при исключении.
+		 *
+		 * @param callable $action - функция, которую нужно выполнить
+		 * @return void
+		 */
+		private function doWithTransaction(callable $action): void
+		{
+			$this->connection->beginTransaction();
+			try
+			{
+				$action();
+				$this->connection->commit();
+			}
+			catch (\Throwable $exception)
+			{
+				$this->connection->rollBack();
+				throw $exception;
+			}
+		}
+
+		private function transferMoneyImpl(string $fromPhone, string $toPhone, float $amount): void
+		{
+			$fromAccount = $this->accountRepository->findByPhone($fromPhone);
+			if (!$fromAccount)
+			{
+				throw new \InvalidArgumentException("No account with phone $fromPhone");
+			}
+
+			$toAccount = $this->accountRepository->findByPhone($toPhone);
+			if (!$toAccount)
+			{
+				throw new \InvalidArgumentException("No account with phone $toPhone");
+			}
+
+
+			$fromAccount->transferMoney($toAccount, $amount);
+			$this->accountRepository->store($fromAccount);
+			$this->accountRepository->store($toAccount);
+
+			$transfer = new AccountBalanceTransfer($fromPhone, $toPhone, $amount);
+			$this->accountBalanceTransferRepository->add($transfer);
+		}
+	}
+
+	Вариант с анонимной функцией
+
+Вариант с анонимной функцией позволяет не выделять приватный метод transferMoneyImpl() и разместить 
+код прямо в методе transferMoney():
+
+	readonly class AccountService
+	{
+		// ... конструктор и другие методы
+
+		public function transferMoney(string $fromPhone, string $toPhone, float $amount): void
+		{
+			$this->doWithTransaction(
+				function (string $fromPhone, string $toPhone, float $amount) use ($fromPhone, $toPhone, $amount): void {
+					$fromAccount = $this->accountRepository->findByPhone($fromPhone);
+					if (!$fromAccount)
+					{
+						throw new \InvalidArgumentException("No account with phone $fromPhone");
+					}
+
+					$toAccount = $this->accountRepository->findByPhone($toPhone);
+					if (!$toAccount)
+					{
+						throw new \InvalidArgumentException("No account with phone $toPhone");
+					}
+
+
+					$fromAccount->transferMoney($toAccount, $amount);
+					$this->accountRepository->store($fromAccount);
+					$this->accountRepository->store($toAccount);
+
+					$transfer = new AccountBalanceTransfer($fromPhone, $toPhone, $amount);
+					$this->accountBalanceTransferRepository->add($transfer);
+				}
+			);
+		}
+
+		/**
+		 * Метод выполняет переданную функцию внутри открытой транзакции,
+		 * в конце вызывая COMMIT при успешном завершении
+		 * либо ROLLBACK при исключении.
+		 *
+		 * @param callable $action - функция, которую нужно выполнить
+		 * @return void
+		 */
+		private function doWithTransaction(callable $action): void
+		{
+			$this->connection->beginTransaction();
+			try
+			{
+				$action();
+				$this->connection->commit();
+			}
+			catch (\Throwable $exception)
+			{
+				$this->connection->rollBack();
+				throw $exception;
+			}
+		}
+	}
+
+Что лучше?
+	* Вариант с анонимной функцией выглядит лучше, поскольку в этом случае логика метода transferMoney() 
+		остаётся внутри метода
+	* Оба варианта отделяют логику управления транзакцией от логики бизнес-сценария, 
+		то есть достигают нашей цели
+
+	Класс TransactionalExecutor
+
+Выделим работу с транзакциями в отдельный класс, который будет содержать метод doWithTransaction:
+
+	readonly class TransactionalExecutor
+	{
+		public function __construct(private Connection $connection)
+		{
+		}
+
+		/**
+		 * Метод выполняет переданную функцию внутри открытой транзакции,
+		 * в конце вызывая COMMIT либо ROLLBACK.
+		 *
+		 * @param callable $action - функция, которую нужно выполнить
+		 * @return mixed|void
+		 */
+		public function doWithTransaction(callable $action)
+		{
+			$this->connection->beginTransaction();
+			try
+			{
+				$result = $action();
+				$this->connection->commit();
+				return $result;
+			}
+			catch (\Throwable $exception)
+			{
+				$this->connection->rollBack();
+				throw $exception;
+			}
+		}
+	}
+
+Из класса AccountService можно удалить метод doWithTransaction(), чтобы использовать 
+TransactionalExecutor:
+
+	readonly class AccountService
+	{
+		// ... конструктор и другие методы
+
+		public function transferMoney(string $fromPhone, string $toPhone, float $amount): void
+		{
+			$transactionalExecutor = new TransactionalExecutor($this->connection);
+			$transactionalExecutor->doWithTransaction(
+				function (string $fromPhone, string $toPhone, float $amount) use ($fromPhone, $toPhone, $amount): void {
+					$fromAccount = $this->accountRepository->findByPhone($fromPhone);
+					if (!$fromAccount)
+					{
+						throw new \InvalidArgumentException("No account with phone $fromPhone");
+					}
+
+					$toAccount = $this->accountRepository->findByPhone($toPhone);
+					if (!$toAccount)
+					{
+						throw new \InvalidArgumentException("No account with phone $toPhone");
+					}
+
+
+					$fromAccount->transferMoney($toAccount, $amount);
+					$this->accountRepository->store($fromAccount);
+					$this->accountRepository->store($toAccount);
+
+					$transfer = new AccountBalanceTransfer($fromPhone, $toPhone, $amount);
+					$this->accountBalanceTransferRepository->add($transfer);
+				}
+			);
+		}
+	}
+
+
+С точки зрения Clean Architecture можно было бы выделить интерфейс TransactionalExecutorInterface и 
+передавать его в конструктор AccountService, чтобы слой приложения зависел от интерфейсов, а не от 
+классов слоя инфраструктуры (слоя работы с данными).
+
+	Именование класса TransactionalExecutor
+
+Почему класс называется TransactionalExecutor?
+
+Давайте сравним с другими вариантами именования:
+	* Название Transaction подошло бы для класса, который инкапсулирует активную транзакцию и 
+		обеспечивает доступ к ней
+		- Однако транзакция — это состояние объекта «Соединение» (Connection), 
+			а не самостоятельный объект
+		- Значит, название Transaction привело бы к появлению ложной абстракции 
+			(англ. Wrong Abstraction)
+	* Название TransactionalExecutor отражает суть класса — исполнение действий с учётом 
+		транзакционной целостности
+
+	Подытожим
+
+* Для объектно-ориентированных программ следует разделять логику и доступ к данным
+	- Другими словами, в объектно-ориентированной программе изменения в моделях определяют изменения 
+		данных в базе данных, а не наоборот
+	- Прямая модификация данных в обход объектов моделей — например, запросами UPDATE — нарушает правила 
+		объектно-ориентированной парадигмы
+	- Значит, логика вычитания суммы перевода из баланса счёта должна быть в классе модели, 
+		а не в SQL-запросе UPDATE
+* UPSERT — это техника записи данных с помощью SQL-запроса, совмещающего в себе свойства запросов 
+	INSERT и UPDATE
+	- Другими словами, одним и тем же запросом к базе данных выполняется вставка строки, если строки с 
+		таким ключом ещё не было, и обновление строки в противном случае 
+	- В MySQL UPSERT реализуется с помощью INSERT ... ON DUPLICATE KEY UPDATE, иногда называемого 
+		кратко: INSERT ODKU
+* Управление транзакциями обычно размещается на уровне, где реализуется отдельный бизнес-сценарий целиком
+	- В нашем случае это классы-сервисы на уровне приложения (Application Layer)
+* Управление транзакциями становится намного проще с функциями высшего порядка
+	- Функции высшего порядка — это функции, которые способны принимать другие функции в качестве 
+		входящих параметров
+	- Внутри такой функции высшего порядка можно инкапсулировать управление транзакцией 
+		(BEGIN / COMMIT / ROLLBACK), отделив шаблонный код управления транзакцией от бизнес-логики

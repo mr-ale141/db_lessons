@@ -1,0 +1,361 @@
+	Функциональные интеграционные тесты
+
+Напомним, что интеграционные тесты делят на два подтипа:
+	* Компонентные тесты проверяют код путём вызова публичных функций и публичных методов 
+		классов модулей
+	* Функциональные тесты проверяют код с помощью внешнего API — например, путём отправки 
+		HTTP-запросов либо путём эмуляции такой отправки
+		
+Следовательно, для написания функциональных тестов надо научиться отправлять HTTP-запросы		
+		
+	Способы функционального тестирования
+
+В языке PHP можно рассматривать два способа тестирования контроллеров, обрабатывающих HTTP-запросы:
+	* Запуск PHP-процесса с тестами параллельно с тестируемым сервисом
+	* Эмуляция отправки HTTP-запросов без вмешательства в код контроллеров
+
+Как эмулировать отправку HTTP-запросов? Ответ зависит от способа обработки HTTP-запросов в приложении:
+	* (Сложный путь) если приложение использует суперглобальные переменные ($_SERVER, $_GET, $_POST, 
+		$_FILES и т.д.), то в тестах придётся правильно устанавливать эти переменные и правильно 
+		сбрасывать их в конце теста
+	* (Простой путь) если приложение использует интерфейсы PSR-7 — ServerRequestInterface и 
+		ResponseInterface — то тестам достаточно правильно создать объект запроса, реализующий 
+		интерфейс ServerRequestInterface
+
+Мы будем рассматривать только метод эмуляции и только в случае, когда приложение использует 
+интерфейсы PSR-7.		
+
+	Подготовка к тестированию
+
+Мы снова будем тестировать сервис wiki-backend-app. Исходный код сервиса можно найти здесь: 
+https://github.com/sergey-shambir/db-course-lab-3-wiki-backend
+
+
+	Перенос маршрутов в фабрику
+
+Обычно в Web-приложениях на основе фреймворка Slim точкой входа в приложение служит скрипт 
+public/index.php, который создаёт объект класса \Slim\App и настраивает в нём маршрутизацию.
+
+Пример скрипта public/index.php:
+
+	<?php
+	declare(strict_types=1);
+
+	use Slim\Factory\AppFactory;
+
+	require __DIR__ . '/../vendor/autoload.php';
+
+	$isProduction = getenv('APP_ENV') === 'prod';
+
+	$app = AppFactory::create();
+
+	// Регистрация middlewares фреймворка Slim.
+	$app->addRoutingMiddleware();
+	$errorMiddleware = $app->addErrorMiddleware(!$isProduction, true, true);
+
+	// Определение правил маршрутизации
+	// Методы get/delete/post соответствуют HTTP-методам GET/DELETE/POST,
+	//  что позволяет по-разному обрабатывать, например, GET и POST
+	//  запросы к одному URL
+	$app->get('/articles/list', \App\Controller\ArticleApiController::class . ':listArticles');
+	$app->delete('/articles/batch-delete', \App\Controller\ArticleApiController::class . ':batchDeleteArticles');
+	$app->get('/article', \App\Controller\ArticleApiController::class . ':getArticle');
+	$app->post('/article', \App\Controller\ArticleApiController::class . ':createArticle');
+	$app->post('/article/edit', \App\Controller\ArticleApiController::class . ':editArticle');
+	$app->delete('/article/delete', \App\Controller\ArticleApiController::class . ':deleteArticle');
+
+	$app->run();
+
+Для покрытия приложения на Slim функциональными тестами потребуется перенести создание объекта класса \Slim\App 
+в отдельный класс, который могут переиспользовать функциональные тесты:
+
+	<?php
+	declare(strict_types=1);
+
+	namespace App\Controller;
+
+	use Slim\App;
+	use Slim\Factory\AppFactory;
+
+	class WikiBackendAppFactory
+	{
+		public static function createApp(): App
+		{
+			$isProduction = getenv('APP_ENV') === 'prod';
+			$app = AppFactory::create();
+
+			// Регистрация middlewares фреймворка Slim.
+			$app->addRoutingMiddleware();
+			$app->addErrorMiddleware(!$isProduction, true, true);
+
+			$app->get('/articles/list', ArticleApiController::class . ':listArticles');
+			$app->delete('/articles/batch-delete', ArticleApiController::class . ':batchDeleteArticles');
+			$app->get('/article', ArticleApiController::class . ':getArticle');
+			$app->post('/article', ArticleApiController::class . ':createArticle');
+			$app->post('/article/edit', ArticleApiController::class . ':editArticle');
+			$app->delete('/article/delete', ArticleApiController::class . ':deleteArticle');
+
+			return $app;
+		}
+	}
+
+	Базовый класс функциональных тестов
+
+Базовый класс функциональных тестов обладает двумя особенностями:
+	* Он расширяет класс AbstractDatabaseTestCase, поскольку функциональные тесты (как и компонентные) 
+		используют управляемые внепроцессные зависимости без замены на тестовых дублёров
+	* Он содержит средства для эмуляции отправки HTTP-запросов приложению
+
+Для эмуляции отправки HTTP-запроса нужно:
+	* Правильно создать объект, реализующий PSR-7 интерфейс ServerRequestInterface
+	* Вызвать у приложения — т.е. у объекта класса \Slim\App — метод handle() 
+		для обработки запроса и получения ответа
+
+Для правильного создания объекта HTTP-запроса, возможно, потребуется разобраться в стандарте PSR-7.
+
+Реализация класса AbstractFunctionalTestCase:
+
+	<?php
+	declare(strict_types=1);
+
+	namespace App\Tests\Common;
+
+	use App\Controller\WikiBackendAppFactory;
+	use Psr\Http\Message\ResponseInterface;
+	use Slim\App;
+	use Slim\Psr7\Factory\ServerRequestFactory;
+	use Slim\Psr7\Factory\UriFactory;
+
+	abstract class AbstractFunctionalTestCase extends AbstractDatabaseTestCase
+	{
+		private App $slimApp;
+		private UriFactory $uriFactory;
+		private ServerRequestFactory $serverRequestFactory;
+
+		public function setUp(): void
+		{
+			parent::setUp();
+			$this->slimApp = WikiBackendAppFactory::createApp();
+			$this->uriFactory = new UriFactory();
+			$this->serverRequestFactory = new ServerRequestFactory();
+		}
+
+		/**
+		 * Отправляет GET запрос, передавая параметры через URL Query.
+		 *
+		 * @param string $urlPath
+		 * @param array $queryParams
+		 * @return ResponseInterface
+		 */
+		protected function sendGetRequest(string $urlPath, array $queryParams): ResponseInterface
+		{
+			$urlString = $urlPath . '?' . http_build_query($queryParams);
+			return $this->doRequest('GET', $urlString);
+		}
+
+		/**
+		 * Отправляет POST запрос, передавая параметры в теле запроса в формате "application/x-www-form-urlencoded"
+		 *
+		 * @param string $urlPath
+		 * @param array $requestParams
+		 * @return ResponseInterface
+		 */
+		protected function sendPostRequest(string $urlPath, array $requestParams): ResponseInterface
+		{
+			return $this->doRequest('POST', $urlPath, $requestParams);
+		}
+
+		/**
+		 * Отправляет DELETE запрос, передавая параметры через URL Query.
+		 *
+		 * @param string $urlPath
+		 * @param array $queryParams
+		 * @return ResponseInterface
+		 */
+		protected function sendDeleteRequest(string $urlPath, array $queryParams): ResponseInterface
+		{
+			$urlString = $urlPath . '?' . http_build_query($queryParams);
+			return $this->doRequest('DELETE', $urlString);
+		}
+
+		private function doRequest(string $method, string $url, array $body = []): ResponseInterface
+		{
+			// Создаём объект, реализующий интерфейс RequestInterface из PSR-7
+			$uri = $this->uriFactory->createUri($url);
+
+			$request = $this->serverRequestFactory
+				->createServerRequest($method, $uri)
+				->withParsedBody($body);
+
+			// Выполняем обработку запроса
+			return $this->slimApp->handle($request);
+		}
+	}
+
+	Пишем тест-кейс
+	
+	Вспомогательные методы
+
+Как вызвать конкретные методы API с помощью HTTP-запросов?
+	* В компонентных тестах мы могли просто вызывать методы класса ArticleService
+	* В функциональных тестах такого удобства нет — и для упрощения задачи мы можем написать вспомогательные методы
+	* Вспомогательные методы будут добавляться в класс тестов, который мы назовём ArticleControllerTest
+
+	Метод assertStatusCode()
+
+Для всех запросов потребуется проверять HTTP Status Code ответа. В этом нам поможет метод assertStatusCode.
+
+	private function assertStatusCode(int $statusCode, ResponseInterface $response): void
+	{
+		$this->assertEquals($statusCode, $response->getStatusCode(), "status code must be $statusCode");
+	}
+
+	Метод parseResponseBodyAsJson()
+
+API-сервис wiki-backend-app использует формат JSON для ответов.
+
+Значит, нам пригодится метод чтения тела HTTP-ответа в формате JSON с возвратом данных в виде PHP-массива:
+
+	private function parseResponseBodyAsJson(ResponseInterface $response): array
+	{
+		$response->getBody()->seek(0);
+		$responseBytes = $response->getBody()->getContents();
+		try
+		{
+			return json_decode($responseBytes, associative: true, flags: JSON_THROW_ON_ERROR);
+		}
+		catch (\JsonException $e)
+		{
+			throw new \RuntimeException("Invalid response body: {$e->getMessage()}", 0, $e);
+		}
+	}
+
+	Метод doGetArticle()
+
+Метод получения статьи принимает ID статьи и возвращает ассоциативный массив в том виде, в котором его 
+передал тестируемый сервис:
+
+	private function doGetArticle(int $articleId): array
+	{
+		$response = $this->sendGetRequest(
+			'/article',
+			['id' => $articleId]
+		);
+
+		// Проверяем HTTP Status Code ответа
+		$this->assertStatusCode(200, $response);
+
+		return $this->parseResponseBodyAsJson($response);
+	}
+
+Мы не планируем писать негативные функциональные тесты, поэтому метод всегда ожидает HTTP статус 200 в ответе.
+
+	Метод doCreateArticle()
+
+Метод создания статьи принимает набор параметров и возвращает id статьи:
+
+	private function doCreateArticle(int $userId, string $title, array $tags): int
+	{
+		$response = $this->sendPostRequest(
+			'/article',
+			[
+				'user_id' => $userId,
+				'title' => $title,
+				'tags' => $tags,
+			]
+		);
+
+		// Проверяем HTTP Status Code ответа
+		$this->assertStatusCode(200, $response);
+
+		$responseData = $this->parseResponseBodyAsJson($response);
+
+		// Проверяем, что поле "id" в ответе имеет тип integer
+		$this->assertEquals('integer', gettype($responseData['id'] ?? null));
+
+		return (int)$responseData['id'];
+	}
+
+	Метод doEditArticle()
+
+Метод редактирования статьи принимает набор параметров, включая id статьи:
+
+	private function doEditArticle(
+		int $articleId,
+		int $userId,
+		string $title,
+		string $content,
+		array $tags
+	): void
+	{
+		$response = $this->sendPostRequest(
+			'/article/edit',
+			[
+				'id' => $articleId,
+				'user_id' => $userId,
+				'title' => $title,
+				'content' => $content,
+				'tags' => $tags,
+			]
+		);
+
+		// Проверяем HTTP Status Code ответа
+		$this->assertStatusCode(200, $response);
+	}
+
+	Тестовый сценарий
+
+Теперь мы можем написать тестовый сценарий testCreateAndEditArticle(), который:
+	* Создаёт статью и проверяет результат
+	* Затем редактирует эту же статью и проверяет результат
+
+Реализация теста:
+
+	public function testCreateAndEditArticle()
+	{
+		// Шаг 1. Arrange
+		$firstAuthorId = 10;
+
+		// Шаг 2. Act
+		$articleId = $this->doCreateArticle(
+			userId: $firstAuthorId,
+			title: '(Черновик) B+ деревья',
+			tags: ['MySQL', 'PostgreSQL']
+		);
+
+		// Шаг 3. Assert
+		$articleData = $this->doGetArticle($articleId);
+		$this->assertEquals('(Черновик) B+ деревья', $articleData['title']);
+		$this->assertEquals('', $articleData['content']);
+		$this->assertEquals(['MySQL', 'PostgreSQL'], $articleData['tags']);
+		$this->assertEquals($firstAuthorId, $articleData['created_by']);
+		$this->assertEquals(null, $articleData['updated_by']);
+
+		// Шаг 1. Arrange
+		$secondAuthorId = 17;
+		$content = <<<TEXT
+					B+-деревья — это основа физической структуры реляционных баз данных.
+					
+					Именно они ответственны за сочетание двух характеристик реляционных СУБД:
+					
+					- Высокая скорость работы как для небольших запросов, так и для больших 
+					- Устойчивость данных к перезагрузке при условии сохранности внешнего диска
+					TEXT;
+
+		// Шаг 2. Act
+		$this->doEditArticle(
+			articleId: $articleId,
+			userId: $secondAuthorId,
+			title: 'B+ деревья',
+			content: $content,
+			tags: ['MySQL', 'B+-деревья', 'Индексы'],
+		);
+
+		// Шаг 3. Assert
+		$articleData = $this->doGetArticle($articleId);
+		$this->assertEquals('B+ деревья', $articleData['title']);
+		$this->assertEquals($content, $articleData['content']);
+		$this->assertEquals(['MySQL', 'B+-деревья', 'Индексы'], $articleData['tags']);
+		$this->assertEquals($firstAuthorId, $articleData['created_by']);
+		$this->assertEquals($secondAuthorId, $articleData['updated_by']);
+	}

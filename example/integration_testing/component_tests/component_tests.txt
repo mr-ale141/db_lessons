@@ -1,0 +1,567 @@
+	Компонентные интеграционные тесты
+
+В этой статье мы рассмотрим базовые потребности компонентного интеграционного теста,
+использующего реальную базу данных в процессе выполнения тестируемого кода.
+	* Такой тест уже не является модульным: использование управляемых внепроцессных зависимостей, 
+		таких как СУБД, переводит тест в категорию интеграционных
+	* В приложениях, интенсивно работающих с базой данных, интеграционные тесты намного полезнее 
+		модульных, потому что вероятность дефектов при работе с базой данных достаточно велика
+
+	Отдельный экземпляр СУБД
+
+Для интеграционных тестов следует использовать отдельный экземпляр СУБД
+	* Использовать экземпляр какого-либо тестового стенда (или тем более production базы данных!) 
+		слишком рискованно
+	* С другой стороны, отдельный экземпляр базы данных для тестов должен иметь точно такую же 
+		версию СУБД и точно такую же схему БД, как и базы данных в тестовых стендах или на production
+
+Отдельный экземпляр MySQL для тестов можно настроить так, чтобы получить максимальную производительность 
+при минимальной надёжности — для данных интеграционных тестов надёжность не нужна.
+
+	Подключение к БД для интеграционных тестов
+
+Чтобы подключить отдельную базу данных, нужно как-то сообщить коду об этом намерении. Например, так:
+	* При выполнении тестов установить переменную APP_ENV=test, которая обозначит приложению, 
+		что оно работает под управлением тестов
+	* В коде, ответственном за получение соединения, выбирать файл конфигурации в зависимости 
+		от значения переменной APP_ENV
+
+Установить переменную можно в bootstrap-файле tests/bootstrap.php, который подключается к PHPUnit 
+с помощью опции --bootstrap утилиты phpunit:
+
+	<?php
+	declare(strict_types=1);
+
+	// Устанавливаем переменную окружения, сигнализирующую приложению, что оно
+	// запускается в режиме тестирования.
+	putenv('APP_ENV=test');
+
+	require_once __DIR__ . '/../vendor/autoload.php';
+
+В классе, ответственном за получение соединения с БД, можно выбирать файл конфигурации в зависимости 
+от значения APP_ENV:
+
+	final class ConnectionProvider
+	{
+		private const DATABASE_CONFIG_NAME = 'app.db.ini';
+		private const TESTS_DATABASE_CONFIG_NAME = 'tests.db.ini';
+
+		public static function getConnection(): Connection
+		{
+			static $connection = null;
+			if ($connection === null)
+			{
+				$config = self::loadDatabaseConfig();
+				$connection = new Connection($config['dsn'], $config['user'], $config['password']);
+			}
+			return $connection;
+		}
+
+		private static function loadDatabaseConfig(): array
+		{
+			// Выбираем конфиг tests.db.ini в тестах,
+			// конфиг app.db.ini в остальных ситуациях
+			$isUnderTests = (getenv('APP_ENV') === 'test');
+			$configName = $isUnderTests ? self::TESTS_DATABASE_CONFIG_NAME : self::DATABASE_CONFIG_NAME;
+
+			// ... загрузка файла конфигурации
+
+			return $config;
+		}
+	}
+
+	Изоляция тестовых сценариев
+	
+Основная сложность тестов с базой данных — это изоляция тестов друг от друга:
+	* Изоляция тестов нужна, чтобы предыдущие запуски данного теста или других тестов не помешали тесту 
+		выполнить свою работу и не поменяли поведение тестируемого кода
+	* Это обеспечивает детерминированность тестов — то есть тесты работают одинаково
+		- при любом порядке выполнения
+		- при повторных запусках
+		- при выборочном запуске только некоторых сценариев
+
+	Способы изоляции тестов с базой данных
+
+В целом существует четыре способа изоляции:
+	* Создавать новый экземпляр базы данных на каждый запуск теста
+	* Очистка таблиц в базе данных после запуска теста
+	* Очистка таблиц в базе данных перед запуском теста
+	* Использовать механизм транзакций и BEGIN ... ROLLBACK, чтобы тест не оставлял за собой никаких следов
+
+Способ №1 слабо применим на практике: создание экземпляра БД на каждый тест слишком дорого.
+
+Споосб №2 плох тем, что можно забыть что-то почистить и это повлияет на тесты впоследствии.
+
+Способ №3 улучшает его — тест сам заботится о чистоте данных для себя, выполняя очистку перед запуском.
+	* На практике выбирать следует либо способ №3, либо способ №4
+	* Мы будем использовать способ №4 как проверенный на личном опыте
+
+	Тест в транзакции
+
+Для поддержки компонентных интеграционных тестов мы напишем базовый класс всех тестов, использующих базу данных.
+
+Этот класс должен:
+	* Создавать соединение с БД и запускать транзакцию SQL-запросом BEGIN перед началом тестов
+	* Выполнять SQL-запрос ROLLBACK после завершения тестов
+	* Предоставлять своё соединение дочерним классам
+
+	Методы setUp() и tearDown()
+
+Для выполнения действий до начала и после завершения тестов библиотека PHPUnit позволяет сделать следующее:
+	* Перегрузить метод TestCase::setUp(), который вызвается перед запуском каждого тестирующего метода
+	* Перегрузить метод TestCase::tearDown(), который вызывается после завершения каждого тестирующего метода
+
+	Класс AbstractDatabaseTestCase
+
+Файл можно расположить в каталоге tests/Common/, которому соответствует пространство имён namespace App\Tests\Common;
+
+Класс будет выглядеть так:
+
+	<?php
+	declare(strict_types=1);
+
+	namespace App\Tests\Common;
+
+	use App\Common\Database\Connection;
+	use App\Common\Database\ConnectionProvider;
+	use PHPUnit\Framework\TestCase;
+
+	abstract class AbstractDatabaseTestCase extends TestCase
+	{
+		private Connection $connection;
+
+		// Вызывается перед каждым тестирующим методом
+		protected function setUp(): void
+		{
+			parent::setUp();
+			// Всегда начинаем транзакцию, чтобы не применять изменений к базе данных.
+			$this->connection = ConnectionProvider::getConnection();
+			$this->connection->beginTransaction();
+		}
+
+		// Вызывается после каждого тестирующего метода
+		protected function tearDown(): void
+		{
+			// Всегда откатываем транзакцию, чтобы не применять изменений к базе данных.
+			$this->connection->rollback();
+			parent::tearDown();
+		}
+
+		final protected function getConnection(): Connection
+		{
+			return $this->connection;
+		}
+	}
+
+	Вложенные транзакции
+
+Если приложение само использует транзакции базы данных, то для применения тестирования 
+с откатом (ROLLBACK) изменений в конце теста нужна поддержка вложенных транзакций.
+	* Некоторые СУБД сами обеспечивают поддержку вложенных транзакций
+	* Чтобы тестирование с откатом (ROLLBACK) работало с любой СУБД, можно использовать 
+		шаблон проектирования «Вложенные транзакции» (англ. Nested Transactions)
+
+Вложенность транзакции можно реализовать, используя пользовательский класс Connection, 
+инкапсулирующий в себе соединение с базой данных, и целочисленный счётчик $transactionLevel:
+	* Если счётчик равен 0, значит транзакций в данный момент нет
+	* Если счётчик равен 1, значит активна одна транзакция и нет вложенных транзакций
+	* Если счётчик больше 1, значит есть вложенные транзакции
+
+При этом вложенные транзакции остаются виртуальными, то есть не приводят к выполнению 
+SQL-запросов к базе данных.
+
+Реализация вложенных транзакций:
+
+	<?php
+	declare(strict_types=1);
+
+	namespace App\Common\Database;
+
+	final class Connection
+	{
+		private ?\PDO $handle = null;
+		private int $transactionLevel = 0;
+
+		// Конструктор и часть методов пропущены
+
+		// Начинает транзакцию, если уровень вложенности транзакций - ноль.
+		public function beginTransaction(): void
+		{
+			if ($this->transactionLevel === 0)
+			{
+				$this->handle->beginTransaction();
+			}
+			++$this->transactionLevel;
+		}
+
+		// Выполняет COMMIT, если уровень вложенности транзакций упал до нуля.
+		public function commit(): void
+		{
+			if ($this->transactionLevel <= 0)
+			{
+				throw new \RuntimeException('Cannot call ' . __METHOD__ . ': there is no open transaction');
+			}
+
+			--$this->transactionLevel;
+			if ($this->transactionLevel === 0)
+			{
+				$this->handle->commit();
+			}
+		}
+
+		// Выполняет ROLLBACK, если уровень вложенности транзакций упал до нуля.
+		public function rollback(): void
+		{
+			if ($this->transactionLevel <= 0)
+			{
+				throw new \RuntimeException('Cannot call ' . __METHOD__ . ': there is no open transaction');
+			}
+
+			--$this->transactionLevel;
+			if ($this->transactionLevel === 0)
+			{
+				$this->handle->rollBack();
+			}
+		}
+	}
+
+	Пишем компонентный тест
+
+Мы снова будем тестировать сервис wiki-backend-app. Исходный код сервиса можно найти здесь:
+https://github.com/sergey-shambir/db-course-lab-3-wiki-backend
+
+	UML-диаграмма классов
+
+Напомним, как выглядит UML-диаграмма классов тестируемого сервиса: 
+(см. ../mock(test_double)/uml.png)
+
+	Архитектурные слои
+	
+Напомним распределение классов программы с точки зрения архитектурных слоёв: 
+(см. ../mock(test_double)/arhitecture.png)
+
+	Что мы будем тестировать?
+
+Выгоднее всего тестировать ArticleService и всё, что он использует, включая репозитории и модель 
+предметной области.
+
+Это позволит одним классом тестов покрыть значительную часть тестируемой системы, сильно повысив 
+уверенность в её работоспособности:
+(см. tests_target.png)
+
+	Тестирующий класс
+
+Теперь, когда всё готово, мы можем написать компонентный тест.
+
+Новый компонентный тест ArticleServiceTest очень похож на модульный тест ArticleServiceUnitTest 
+из прошлой статьи и имеет лишь два отличия:
+	* Тестирующий класс наследуется от AbstractDatabaseTestCase (реализованный выше)
+	* Вместо тестовых дублёров он использует реальные классы репозиториев
+
+	class ArticleServiceTest extends AbstractDatabaseTestCase
+	{
+		/**
+		 * Это ПЛОХОЙ пример теста: он проверяет всего один метод, а лучше проверять целый бизнес-сценарий.
+		 * Пример оставлен для иллюстрации.
+		 */
+		public function testCreateArticle(): void
+		{
+			// Шаг 1. Arrange
+			// В данном случае мы только создаём сервис
+			$service = $this->createArticleService();
+			$firstAuthorId = 10;
+
+			// Шаг 2. Act
+			$articleId = $service->createArticle(new CreateArticleParams(
+				userId: $firstAuthorId,
+				title: '(Черновик) B+ деревья',
+				tags: ['MySQL', 'PostgreSQL'],
+			));
+
+			// Шаг 3. Assert
+			$article = $service->getArticle($articleId);
+			$this->assertEquals('(Черновик) B+ деревья', $article->getTitle());
+			$this->assertArticleTags(['MySQL', 'PostgreSQL'], $article);
+			$this->assertEquals($firstAuthorId, $article->getCreatedBy());
+		}
+
+		private function assertArticleTags(array $expected, Article $article): void
+		{
+			$actual = $article->getTags();
+			sort($expected);
+			sort($actual);
+			$this->assertEquals($expected, $actual, 'article tags');
+		}
+
+		private function createArticleService(): ArticleService
+		{
+			$connection = $this->getConnection();
+			return new ArticleService(
+				new ArticleRepository($connection),
+				new TagRepository($connection)
+			);
+		}
+	}
+
+	Вспомогательные методы
+
+В этом тестирующем классе используются вспомогательные приватные методы:
+	* Метод assertArticleTags() сравнивает списки тегов, выполняя сортировку перед сравнением
+		- Это позволяет избежать ситуаций, когда одинаковые наборы тегов по-разному отсортированы, 
+			- что вызывало бы ложные срабатывания проверочных утверждений
+	* Метод createArticleService() создаёт тестируемый сервис с подлинными версиями зависимостей
+
+	Сравнение тестов
+
+Сравним модульный тестом ArticleServiceUnitTest с новым компонентным тестом ArticleServiceTest :
+
+Критерий
+	Модульный тест ArticleService
+	Компонентный тест ArticleService
+Способность находить ошибки
+	Выявляет только дефекты в ArticleService и Article
+	Выявляет дефекты в ArticleService, Article, ArticleRepository и TagRepository
+Сопровождаемость теста
+	Требует усилий для создания Fake или Mock объектов
+	Использует подлинные классы
+Скорость теста
+	Не тратит время на подключение к БД
+	Замедляется из-за взаимодействия с базой данных
+
+Таким образом, интеграционный тест выигрывает по двум из трёх критериев — и прежде всего по 
+способности находить ошибки в коде, что является ключевым для любого теста.
+
+Вывод: предпочитайте интеграционные тесты вместо модульных для совместного тестирования слоёв 
+Application Layer, Domain Layer и Persistence Layer.
+
+	Количество тестирующих методов
+
+У нас есть класс ArticleService, который имеет 5 методов: (см. article_service.png)
+
+Подумайте: сколько тестов для проверки этого класса нам потребуется написать, чтобы обеспечить 
+уверенность в работоспособности сервиса?
+	* Пять (по одному на метод класса)?
+	* Десять (по два на метод класса)?
+	* Двадцать (по 4 на метод класса)?
+
+А теперь внесите две поправки:
+	* Негативные тесты для нашей цели не нужны, т.к. они никак не влияют на уверенность 
+		в работоспособности сервиса
+	* Один тест вполне может проверять несколько методов класса
+
+Нам достаточно всего двух тестов:
+	* Проверка создания, редактирования и затем удаления статьи
+	* Проверка удаления нескольких статей (batchDeleteArticles)
+
+По сути эти тесты будут проверять не методы сервиса, а полноценные бизнес-сценарии приложения.
+
+Тесты полноценных бизнес-сценариев имеют ряд преимуществ:
+	* У них немного выше шанс найти дефект в программе, потому они проверяют взаимосвязь разных 
+		методов API в рамках единого бизнес-сценария
+	* Они более устойчивы к рефакторингу, потому что они проверяют результат путём проверки 
+		наблюдаемого поведения
+		- Напомним, что рефакторинг — это изменение структуры кода без изменения его 
+			наблюдаемого поведения
+	* Они имеют более низкую стоимость разработки благодаря снижению дублирования кода в тестах
+	* Они выполняются быстрее, т.к. не нужно многократно готовить одни и те же начальные условия 
+		для множества похожих тестов
+
+Иначе говоря, тестирование бизнес-сценариев вместо отдельных методов лучше по всем 
+параметрам одновременно.
+
+	Покрываем всё двумя тестами
+
+	Шаблон AAA (Arrange-Act-Assert)
+
+Напомним, что мы используем шаблон AAA для любых достаточно сложных тестов. В рамках этого шаблона 
+тест содержит три шага:
+	* Arrange — подготовка состояния системы (создание объектов, подготовка данных)
+	* Act — выполнения действия путём вызова API тестируемого модуля
+	* Assert — проверка утверждений, касающихся возвращаемых методами результатов, состояния 
+		объектов или состояния Mock-ов
+
+	Множественный шаблон AAA
+
+В последующих тестах мы будем повторять шаблон AAA несколько раз.
+
+Другими словами, один тестирущий метод будет содержать несколько циклов: 
+Arrange-Act-Assert-Arrange-Act-Assert-....
+
+	Первый тест бизнес-сценария
+
+Тест выполняет создание, редактирование и затем удаление статьи, проверяя состояние базы данных 
+после каждой операции:
+	* Мы добавим этот тест в класс ArticleServiceTest
+	* Новый тест называется testCreateEditAndDeleteArticle()
+	* Он заменяет собой старый тест testCreateArticle(), который теперь можно удалить
+		- На самом деле мы можем не удалять, а просто расширить старый тест 
+
+Нюансы теста:
+	* Создание и редактирование выполняют разные авторы, что позволяет проверить правильность 
+		сохранения свойств createdBy и updatedBy
+	* Факт удаления статьи мы проверяем, ожидая выброс исключения при вызове getArticle() 
+		для удалённой статьи
+		- Для этого используем метод $this->expectException(), предоставляемый PHPUnit в 
+			базовом классе TestCase
+
+	class ArticleServiceTest extends AbstractDatabaseTestCase
+	{
+		public function testCreateEditAndDeleteArticle(): void
+		{
+			// Шаг 1. Arrange
+			// В данном случае мы только создаём сервис
+			$service = $this->createArticleService();
+			$firstAuthorId = 10;
+
+			// Шаг 2. Act
+			$articleId = $service->createArticle(new CreateArticleParams(
+				userId: $firstAuthorId,
+				title: '(Черновик) B+ деревья',
+				tags: ['MySQL', 'PostgreSQL'],
+			));
+
+			// Шаг 3. Assert
+			$article = $service->getArticle($articleId);
+			$this->assertEquals('(Черновик) B+ деревья', $article->getTitle());
+			$this->assertArticleTags(['MySQL', 'PostgreSQL'], $article);
+			$this->assertEquals($firstAuthorId, $article->getCreatedBy());
+
+			// Шаг 1. Arrange
+			$secondAuthorId = 17;
+
+			// Шаг 2. Act
+			$service->editArticle(new EditArticleParams(
+				id: $articleId,
+				userId: $secondAuthorId,
+				title: 'B+ деревья',
+				content: <<<TEXT
+						B+-деревья — это основа физической структуры реляционных баз данных.
+						
+						Именно они ответственны за сочетание двух характеристик реляционных СУБД:
+						
+						- Высокая скорость работы как для небольших запросов, так и для больших 
+						- Устойчивость данных к перезагрузке при условии сохранности внешнего диска
+						TEXT,
+				tags: ['MySQL', 'B+-деревья', 'Индексы'],
+			));
+
+			// Шаг 3. Assert
+			$article = $service->getArticle($articleId);
+			$this->assertEquals('B+ деревья', $article->getTitle());
+			$this->assertArticleTags(['MySQL', 'B+-деревья', 'Индексы'], $article);
+			$this->assertEquals($firstAuthorId, $article->getCreatedBy());
+			$this->assertEquals($secondAuthorId, $article->getUpdatedBy());
+
+			// Шаг 2. Act
+			$service->deleteArticle($articleId);
+
+			// Шаг 3. Assert
+			$this->expectException(ArticleNotFoundException::class);
+			$service->getArticle($articleId);
+		}
+
+		private function assertArticleTags(array $expected, Article $article): void
+		{
+			$actual = $article->getTags();
+			sort($expected);
+			sort($actual);
+			$this->assertEquals($expected, $actual, 'article tags');
+		}
+
+		private function createArticleService(): ArticleService
+		{
+			$connection = $this->getConnection();
+			return new ArticleService(
+				new TransactionalExecutor($connection),
+				new ArticleRepository($connection),
+				new TagRepository($connection)
+			);
+		}
+	}
+
+	Второй тест бизнес-сценария
+
+Тест проверяет создание трёх статей и удаление двух из них.
+
+Нюансы теста:
+	* Факт удаления статьи мы проверяем вспомогательным методом assertThrows(), 
+		ожидая исключения при вызове getArticle() для удалённой статьи
+	* Тест проверяет как название, так и теги оставшейся статьи, потому что эти 
+		свойства хранятся в разных таблицах базы данных (article и article_tag соответственно)
+		- Дефект в коде может касаться, например, только удаления из таблицы article_tag — такой 
+			дефект будет проявляться только на тегах оставшейся статьи
+
+	class ArticleServiceTest extends AbstractDatabaseTestCase
+	{
+		public function testBatchDeleteArticles(): void
+		{
+			// Шаг 1. Arrange
+			// В данном случае мы только создаём сервис
+			$service = $this->createArticleService();
+			$authorId = 10;
+
+			// Шаг 2. Act
+			$firstArticleId = $service->createArticle(new CreateArticleParams(
+				userId: $authorId,
+				title: 'B+ деревья',
+				tags: ['MySQL', 'PostgreSQL'],
+			));
+			$secondArticleId = $service->createArticle(new CreateArticleParams(
+				userId: $authorId,
+				title: 'Индексы',
+				tags: ['MySQL', 'PostgreSQL', 'SQL'],
+			));
+			$thirdArticleId = $service->createArticle(new CreateArticleParams(
+				userId: $authorId,
+				title: 'План выполнения запроса',
+				tags: ['MySQL', 'EXPLAIN', 'SQL'],
+			));
+			$service->batchDeleteArticles([$firstArticleId, $secondArticleId]);
+
+			// Шаг 3. Assert
+			$article = $service->getArticle($thirdArticleId);
+			$this->assertEquals('План выполнения запроса', $article->getTitle());
+			$this->assertArticleTags(['MySQL', 'EXPLAIN', 'SQL'], $article);
+
+			$this->assertThrows(
+				static fn() => $service->getArticle($firstArticleId),
+				ArticleNotFoundException::class
+			);
+			$this->assertThrows(
+				static fn() => $service->getArticle($secondArticleId),
+				ArticleNotFoundException::class
+			);
+		}
+
+		private function assertThrows(\Closure $closure, string $exceptionClass): void
+		{
+			$actualExceptionClass = null;
+			try
+			{
+				$closure();
+			}
+			catch (\Throwable $e)
+			{
+				$actualExceptionClass = $e::class;
+			}
+			$this->assertEquals($exceptionClass, $actualExceptionClass, "$exceptionClass exception should be thrown");
+		}
+
+		private function assertArticleTags(array $expected, Article $article): void
+		{
+			$actual = $article->getTags();
+			sort($expected);
+			sort($actual);
+			$this->assertEquals($expected, $actual, 'article tags');
+		}
+
+		private function createArticleService(): ArticleService
+		{
+			$connection = $this->getConnection();
+			return new ArticleService(
+				new TransactionalExecutor($connection),
+				new ArticleRepository($connection),
+				new TagRepository($connection)
+			);
+		}
+	}

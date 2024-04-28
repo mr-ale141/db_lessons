@@ -1,0 +1,553 @@
+	Тестовые дублёры
+
+Тестовый дублёр (англ. Test Double) — это объект, используемый в тестах объектно-ориентированной 
+программы в качестве замены (дублёра) реального объекта
+
+Сегодня мы выясним, зачем нужны дублёры, как они используются в объектно-ориентированном коде и 
+какие виды дублёров существуют.
+
+	Тестируемая система
+
+Тестируемая система (англ. System Under Test, сокр. SUT) — это модуль, приложение или сервис, 
+тестируемый с помощью некоторого набора автоматизированных тестов.
+
+Чтобы понять потребность, рассмотрим пример API-сервиса, который предоставляет API на основе 
+протокола HTTP для создания, просмотра, редактирования и удаления статей.
+
+Мы назовём этот сервис wiki-backend-app. Исходный код сервиса можно найти здесь: 
+https://github.com/sergey-shambir/db-course-lab-3-wiki-backend
+
+Архитектура сервиса wiki-backend-app
+Логически список операций, реализованных в сервисе, можно описать следующим образом (рис. wiki-backend-app.png)
+
+	UML-диаграмма классов
+
+Сервис написан в объектно-ориентированном стиле с использованием ряда шаблонов проектирования 
+в адаптации для Web-приложений.
+
+Взаимосвязь классов можно отобразить в виде UML-диаграммы классов: (рис. uml.png)
+
+На этой UML-диаграмме можно увидеть следующее:
+	* Используется шаблон MVC (Model-View-Controller) — роль контроллера исполняет класс ArticleApiController
+	* Моделью предметной области является класс Article — он моделирует сущность «Статья», имеющий смысл в 
+		рамках предметной области
+		- Данная модель является сущностью (англ. entity), поскольку имеет идентичность (реализованную за 
+			счёт суррогатного ключа int $id) и собственный жизненный цикл
+	* Используется шаблон Service Layer — роль сервиса исполняет класс ArticleService
+		- Сервис является «чистой выдумкой» (англ. pure fabrication) с точки зрения шаблонов проектирования 
+			GRASP — другими словами, он не имеет смысла в предметной области
+		- Сервис реализует управление операциями создания, получения, редактирования и удаления статьи (Article)
+	* Используется шаблон Repository — роль репозитория исполняют два класса ArticleRepository и TagRepository
+		- Класс TagRepository обеспечивает хранение тегов, используемыми в различных статьях
+		- Класс ArticleRepository обеспечивает хранение статей (Article)
+
+UML расшировывается как Unified Modeling Language. Это метод описания диаграмм (или язык диаграмм), 
+предназначенный для объектно-ориентированного проектирования.
+
+	Архитектурные слои
+
+С точки зрения архитектурных слоёв программы классы распределяются следующим образом: (рис. arhitecture.png)
+
+	Схема базы данных
+
+Для полноты картины покажем, как репозитории обращаются к таблицам в базе данных: (рис. db_shema.png)
+
+	Пишем модульные тесты
+	
+Шаблон AAA (Arrange-Act-Assert)
+
+Сегодня мы будем писать тесты, моделирующие небольшой сценарий в объектно-ориентированной программе.
+
+Такие модульные тесты удобно писать по шаблону AAA, что расшифровывается как Arrange-Act-Assert.
+
+Эти шаги воспроизводятся в каждом тестирующем методе:
+	* Arrange — подготовка состояния системы (создание объектов, подготовка данных)
+	* Act — выполнения действия путём вызова API тестируемого модуля
+	* Assert — проверка утверждений, касающихся возвращаемых методами результатов, состояния объектов 
+		или состояния Mock-ов (о которых мы поговорим позже)
+
+Шаблон AAA ещё более востребован в интеграционных тестах.
+
+	Что покрывать тестами
+
+Какие слои сервиса можно протестировать с помощью модульных тестов?
+
+Напомним их определение:
+	* Модульные тесты (англ. unit tests) состоят из быстро выполняемых тестовых сценариев, работающих с 
+		отдельными модулями (англ. unit) программы в полной изоляции от внепроцессных зависимостей и от 
+		других тестовых сценариев
+
+Изложим соображения:
+	* Отсутствие внепроцессных зависимостей означает, что мы не можем тестировать модульными тестами 
+		слой доступа к данным.
+	* Слой контроллеров на смысловом уровне зависит от деталей протокола HTTP, следовательно, его 
+		тестирование модульными тестами потребует слишком большого числа манипуляций
+		- Для подмены классов, от которых зависит контроллер, если такой класс использует 
+			внепроцессные зависимости
+		- Для подстановки тестовых дублёров вместо интерфейса ServerRequestInterface 
+		- Для проверки результата в виде ResponseInterface
+
+Забегая вперёд скажем, что слой контроллеров отлично тестируется функциональными интеграционными тестами.
+
+Итого мы можем протестировать два слоя: (рис. unit_tests_trarget.png)
+
+	Unit-тесты слоя предметной области
+
+На слое приложения мы можем протестировать класс Article, который в сокращённом виде выглядит так:
+
+	class Article
+	{
+		public function __construct(
+			private ?int $id,
+			private int $version,
+			private string $title,
+			private string $content,
+			private array $tags,
+			private \DateTimeImmutable $createdAt,
+			private int $createdBy,
+			private ?\DateTimeImmutable $updatedAt = null,
+			private ?int $updatedBy = null
+		)
+		{
+		}
+
+		public function edit(int $userId, string $title, string $content, array $tags): void
+		{
+			$this->title = $title;
+			$this->content = $content;
+			$this->tags = $tags;
+
+			$this->updatedAt = new \DateTimeImmutable();
+			$this->updatedBy = $userId;
+		}
+
+		public function getId(): ?int
+		{
+			return $this->id;
+		}
+
+		public function getTitle(): string
+		{
+			return $this->title;
+		}
+
+		// ...методы getContent(), getTags() и т.д. пропущены
+	}
+
+Что можно протестировать в этом классе? Запишем это в виде таблицы
+
+Группа методов класса Article
+	Тестируемость
+Конструктор класса
+	Тривиальный код — нет смысла тестировать
+Метод edit
+	Простой код — тесты несут мало пользы
+Методы для чтения свойств (getter'ы)
+	Тривиальный код — нет смысла тестировать
+
+Класс Article слишком прост для тестирования!
+	* В конструкторе и в методах для чтения свойств практически невозможно допустить дефекты
+	* В методе edit() можно ошибиться только в некоторых нюансах поведения
+		- Например, edit не должен менять свойство createdBy, но должен поменять 
+			свойство updatedBy у статьи
+
+	Тестирующий класс
+
+Для проверки метода edit() класса Article можно написать тест, следующий шаблону AAA (Arrange-Act-Assert):
+
+	<?php
+	declare(strict_types=1);
+
+	namespace App\Tests\Unit;
+
+	use App\Model\Article;
+	use PHPUnit\Framework\TestCase;
+
+	/**
+	 * Этот тест несёт мало пользы и добавлен в целях иллюстрации подхода к модульному тестированию.
+	 */
+	class ArticleTest extends TestCase
+	{
+		public function testEditArticle(): void
+		{
+			// Шаг 1. Arrange (подготовка состояния)
+			$firstAuthorId = 307;
+			$secondAuthorId = 417;
+			$article = new Article(
+				id: 10,
+				version: 1,
+				title: '(Черновик) B+ деревья',
+				content: <<<TEXT
+					B+-деревья — это основа физической структуры реляционных баз данных.
+					
+					Именно они ответственны за сочетание двух характеристик реляционных СУБД...
+					TEXT
+				,
+				tags: ['MySQL', 'PostgreSQL'],
+				createdAt: new \DateTimeImmutable(),
+				createdBy: $firstAuthorId
+			);
+
+			// Шаг 2. Act (выполнение действия)
+			$article->edit(
+				userId: $secondAuthorId,
+				title: 'B+ деревья',
+				content: <<<TEXT
+						B+-деревья — это основа физической структуры реляционных баз данных.
+						
+						Именно они ответственны за сочетание двух характеристик реляционных СУБД:
+						
+						- Высокая скорость работы как для небольших запросов, так и для больших 
+						- Устойчивость данных к перезагрузке при условии сохранности внешнего диска
+						TEXT,
+				tags: ['MySQL', 'B+-деревья', 'Индексы'],
+			);
+
+			// Шаг 3. Assert (проверка утверждений)
+			$this->assertEquals('B+ деревья', $article->getTitle());
+			$this->assertEquals(['MySQL', 'B+-деревья', 'Индексы'], $article->getTags());
+			$this->assertEquals($firstAuthorId, $article->getCreatedBy());
+			$this->assertEquals($secondAuthorId, $article->getUpdatedBy());
+		}
+	}
+
+
+Данный тест вряд ли найдёт дефекты, однако в более сложных моделях модульное тестирование может 
+оказаться полезным для проверки состояния объекта и его внутренних инвариантов после вызова команд 
+(где команда — это метод, изменяющий состояние объекта).
+
+	Unit-тесты слоя приложения
+
+Напомним распределение классов по слоям: (рис. unit_tests_trarget.png)
+
+Для проверки класса ArticleService нужно создать его экземпляр.
+
+Но есть проблема — класс зависит от других классов:
+
+	readonly class ArticleService
+	{
+		public function __construct(
+			private ArticleRepository $articleRepository,
+			private TagRepository $tagRepository)
+		{
+		}
+	}
+
+Более того — мы не можем создавать экземпляры этих классов в модульных тестах, потому что они 
+обращаются к базе данных, которая является внепроцессной зависимостью программы.
+
+	Рефакторинг: выделяем интерфейсы
+
+Рефакторинг ради возможности тестирования — это далеко не всегда хорошо. Иногда это ведёт к 
+плохим решениям, что называется Test-induced design damage.
+
+Для обеспечения тестируемости кода модульными тестами мы выделим интерфейсы для классов, 
+от которых зависит ArticleService
+	* такой рефакторинг соответствует принципу Dependency Inversion из набора принципов S.O.L.I.D.
+		- согласно данному принципу, классы на более высоких уровнях абстракции не должны прямо 
+			зависеть от низкоуровневых классов
+		- вместо этого такие классы должны зависеть от интерфейсов, реализуемых 
+			низкоуровневыми классами
+	* текущие версии классов ArticleRepository и TagRepository станут основными реализациями интерфейсов
+
+Пример одного из выделенных интерфейсов:
+
+	<?php
+	declare(strict_types=1);
+
+	namespace App\Model\Repository;
+
+	use App\Model\Article;
+
+	interface ArticleRepositoryInterface
+	{
+		public function findOne(int $id): ?Article;
+
+		public function save(Article $article): int;
+
+		/**
+		 * @param int[] $ids
+		 * @return void
+		 */
+		public function delete(array $ids): void;
+	}
+
+Реализация интерфейса классом в PHP определяется с помощью ключевого слова implements:
+
+	class ArticleRepository implements ArticleRepositoryInterface
+	{
+		 // Теперь класс должен реализовать все методы интерфейса
+	}
+
+	Репозиторий в памяти
+
+Напомним, что использование метафоры коллекции вместо метафоры базы данных — ключевой 
+аспект шаблона Repository.
+	* При этом любую коллекцию можно реализовать так, чтобы данные хранились в оперативной 
+		памяти (например, в ассоциативном массиве)
+	* Это позволяет написать In-Memory реализацию репозитория, которую мы сможем использовать 
+		в модульных тестах
+		
+Новый класс назовём InMemoryArticleRepository.
+
+Основная сложность в реализации InMemoryArticleRepository — генерация ID статьи при первом сохранении
+	* Класс ArticleRepository этим не занимался: статья просто сохранялась в базу данных, которая при 
+		вставке строки сама заполняет значением колонку id вследствие атрибута AUTO_INCREMENT
+	* В классе InMemoryArticleRepository этого можно достичь с помощью статической переменной 
+		static $nextId = 0;, которая хранит следующий ID статьи
+	* Обращение к переменной будет инкапсулировано в методе getNextArticleId()
+
+Так реализуется репозиторий в памяти:
+
+	<?php
+	declare(strict_types=1);
+
+	namespace App\Tests\TestDouble;
+
+	use App\Model\Article;
+	use App\Model\Repository\ArticleRepositoryInterface;
+
+	class InMemoryArticleRepository implements ArticleRepositoryInterface
+	{
+		/**
+		 * @var array<int,Article> - отображает ID статьи на объект класса Article
+		 */
+		private array $articlesById = [];
+
+		public function findOne(int $id): ?Article
+		{
+			return $this->articlesById[$id] ?? null;
+		}
+
+		public function save(Article $article): int
+		{
+			$id = $article->getId();
+			if ($id === null)
+			{
+				// Генерируем фейковый ID (монотонно возрастающий)
+				$id = $this->getNextArticleId();
+				$article->assignIdentifier($id);
+			}
+			$this->articlesById[$id] = $article;
+
+			return $id;
+		}
+
+		public function delete(array $ids): void
+		{
+			foreach ($ids as $id)
+			{
+				unset($this->articlesById[$id]);
+			}
+		}
+
+		private function getNextArticleId(): int
+		{
+			static $nextId = 0;
+			return ++$nextId;
+		}
+	}
+
+Теперь мы можем использовать репозиторий в модульных тестах, не пользуясь базой данных!
+
+На самом деле это сомнительное достижение. Мы обсудим это позже.
+
+	Mock-ирование объектов
+
+У нас есть интерфейс TagsRepositoryInterface, который имеет всего один метод для записи и 
+не позволяет получить данные обратно:
+
+	interface TagRepositoryInterface
+	{
+		/**
+		 * @param string[] $tags
+		 * @return void
+		 */
+		public function addTags(array $tags): void;
+	}
+
+Как проверить, что тестируемый код записывает правильные теги?
+
+Можно написать класс MockTagRepository, который
+	* Реализует интерфейс TagRepositoryInterface, сохраняя переданные теги во множество тегов
+	* Имеет метод getTags(), который возвращает все ранее добавленные теги
+
+Такая реализация позволит тестам проверить, что ArticleService хотя бы пытался сохранить 
+теги в репозиторий TagRepository.
+
+	Множество тегов
+
+Основная сложность такого класса в том, что в языке PHP нет типа данных множество.
+
+Подумайте: как реализовать множество средствами PHP?
+
+Напомним, что множество — это абстрактный тип данных (АТД), а не структура данных.
+
+* Иными словами, АТД «множество» — это лишь набор требований к структуре данных, которая должна 
+	реализовать операции над множеством
+	- Структура данных — это реализация абстрактного типа данных с помощью конкретного 
+		набора правил и алгоритмов
+* Основные операции над множеством — включение элемента во множества, удаление элемента из 
+	множества и получение всех элементов множества
+* В любом языке программирования, где есть поддержка ассоциативных массивов, можно использовать 
+	их вместо множества
+	- Кстати, ассоциативный массив — тоже абстрактный тип данных (АТД), а не структура данных
+* В языке PHP обычный тип array способен быть ассоциативным массивом (при этом интерпретатор 
+	будет использовать структуру данных «хеш-таблица» для ассоциативного массива)
+
+Для реализации множества на основе ассоциативного массива достаточно хранить в таком массиве:
+	* элементы множества в качестве ключей
+	* что угодно в качестве значений — обычно используют значение true
+
+Основные операции над множеством в PHP реализуются так:
+
+	Операция над множеством
+		Реализация на массивах PHP
+	Создание пустого множества
+		$this->set = []
+	Включение элемента в множество
+		$this->set[$value] = true
+	Удаление элемента множества
+		unset($this->set[$value])
+	Проверка наличия элемента в множестве
+		$this->set[$value] ?? false
+	Получение всех элементов множества
+		array_keys($this->set)
+	Объединение двух множеств
+		array_merge($setA, $setB)
+
+Учтите, что качестве ключей в ассоциативном массиве в PHP можно использовать только целые 
+числа int и строки string
+	* если же вам нужно множество объектов, используйте идентификатор сущности для получения 
+		ключа и храните сам объект в качестве значения
+	* если объект не имеет идентификатора, функция spl_object_hash() иногда может его заменить
+		(https://www.php.net/manual/en/function.spl-object-hash.php) 
+
+	Реализация MockTagRepository
+
+Теперь можем реализовать MockTagRepository, позволяющий проверить, что ArticleService хотя бы 
+пытался сохранить теги:
+
+	class MockTagRepository implements TagRepositoryInterface
+	{
+		/**
+		 * @var array<string,true> - множетсво тегов на основе ассоциативного массива
+		 */
+		private $tagsSet = [];
+
+		public function addTags(array $tags): void
+		{
+			foreach ($tags as $tag)
+			{
+				$this->tagsSet[$tag] = true;
+			}
+		}
+
+		public function getTags(): array
+		{
+			return array_keys($this->tagsSet);
+		}
+	}
+
+	Тестирующий класс
+
+Для проверки метода edit() класса ArticleService можно написать тест, 
+следующий шаблону AAA (Arrange-Act-Assert):
+
+	class ArticleServiceUnitTest extends TestCase
+	{
+		public function testCreateArticleV1(): void
+		{
+			// Шаг 1. Arrange
+			$tagRepositoryMock = new MockTagRepository();
+			$service = new ArticleService(
+				new DummyTransactionalExecutor(),
+				new FakeArticleRepository(),
+				$tagRepositoryMock
+			);
+			$firstAuthorId = 10;
+
+			// Шаг 2. Act
+			$articleId = $service->createArticle(new CreateArticleParams(
+				userId: $firstAuthorId,
+				title: '(Черновик) B+ деревья',
+				tags: ['MySQL', 'PostgreSQL'],
+			));
+
+			// Шаг 3. Assert
+			$article = $service->getArticle($articleId);
+			$this->assertEquals('(Черновик) B+ деревья', $article->getTitle());
+			$this->assertArticleTags(['MySQL', 'PostgreSQL'], $article);
+			$this->assertEquals($firstAuthorId, $article->getCreatedBy());
+			$this->assertEquals($tagRepositoryMock->getTags(), ['MySQL', 'PostgreSQL']);
+		}
+	}
+	
+Аналогично мы можем написать тесты на остальные методы класса ArticleService.
+
+	Применяем возможности PHPUnit
+
+	Mock-ирование в PHPUnit
+
+Мы можем не писать собственных классов для Mock-ирования объектов.
+	* Библиотека PHPUnit добавляет в базовый класс TestCase метод createMock(), который позволяет 
+		получить Mock без создания своего класса
+	* Подробности в документации: 9. Тестовые двойники
+		(https://phpunit-documentation-russian.readthedocs.io/ru/latest/test-doubles.html)
+		
+Для mock-ирования TagRepositoryInterface достаточно сделать два действия:
+	* Создать Mock вызовом createMock(className)
+	* Один или несколько раз вызвать у Mock метод expects(), чтобы настроить ожидания средствами PHPUnit
+
+В коде это выглядит так:
+
+	$tagRepositoryMock = $this->createMock(TagRepositoryInterface::class);
+	$tagRepositoryMock->expects($this->exactly(2))->method('addTags');
+
+Метод expects() используется следующим образом:
+	* Аргументы expects() — это объект, описывающий ожидаемое число вызовов
+		- Здесь можно использовать $this->never(), $this->once(), $this->exactly(число) либо иной вариант, 
+			например, $this->atLeast(число)
+	* Метод expects() возвращает специальный объект, у которого можно вызвать метод method(), чтобы указать 
+		название метода mock-ируемого класса или интерфейса, вызовы которого нужно проверить
+		- method('addTags') означает, что Mock будет проверять количество вызовов метода addTags() 
+			у мокируемого объекта
+
+В языке PHP библиотеки Mock-ирования работают за счёт перегрузки магического метода __call(...), который 
+вызывается каждый раз, когда у объекта вызван неизвестный метод, отсутствующий в определении класса.
+
+	Новая версия теста
+
+Теперь с возможностями PHPUnit тест можно написать иначе.
+
+В этой версии обратите внимание на объект $tagRepositoryMock:
+
+	class ArticleServiceUnitTest extends TestCase
+	{
+		public function testCreateArticleV2(): void
+		{
+			// Шаг 1. Arrange
+			$tagRepositoryMock = $this->createMock(TagRepositoryInterface::class);
+			$service = new ArticleService(
+				new DummyTransactionalExecutor(),
+				new FakeArticleRepository(),
+				$tagRepositoryMock
+			);
+			$firstAuthorId = 10;
+
+			$tagRepositoryMock->expects($this->exactly(2))->method('addTags');
+
+			// Шаг 2. Act
+			$articleId = $service->createArticle(new CreateArticleParams(
+				userId: $firstAuthorId,
+				title: '(Черновик) B+ деревья',
+				tags: ['MySQL', 'PostgreSQL'],
+			));
+
+			// Шаг 3. Assert
+			$article = $service->getArticle($articleId);
+			$this->assertEquals('(Черновик) B+ деревья', $article->getTitle());
+			$this->assertArticleTags(['MySQL', 'PostgreSQL'], $article);
+			$this->assertEquals($firstAuthorId, $article->getCreatedBy());
+		}
+	}
