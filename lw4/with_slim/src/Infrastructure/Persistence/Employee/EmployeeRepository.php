@@ -83,20 +83,20 @@ class EmployeeRepository implements EmployeeRepositoryInterface
     {
         try {
             return new Employee(
-                (int)$row['id'],
                 (int)$row['department_id'],
                 (string)$row['firstname'],
                 (string)$row['middlename'],
-                (string)$row['lastname'],
                 (string)$row['sex'],
                 $this->parseDateTimeOrNull($row['birth_date']),
-                (float)$row['experience'],
                 (string)$row['address'],
+                $this->parseDateTimeOrNull($row['employment']),
+                (string)$row['position'],
+                (int)$row['id'],
+                (string)$row['lastname'],
+                (float)$row['experience'],
                 (string)$row['phone'],
                 (string)$row['email'],
                 (string)$row['password'],
-                $this->parseDateTimeOrNull($row['employment']),
-                (string)$row['position'],
             );
         } catch (Exception $e) {
             throw new RuntimeException($e->getMessage(), $e->getCode(), $e);
@@ -138,7 +138,7 @@ class EmployeeRepository implements EmployeeRepositoryInterface
 
         $this->connection->execute(
             <<<SQL
-            DELETE FROM employee WHERE id = ($id)
+            DELETE FROM employee WHERE id = ?
             SQL,
             [$id]
         );
@@ -236,8 +236,9 @@ class EmployeeRepository implements EmployeeRepositoryInterface
         ];
 
         $stmt = $this->connection->execute($query, $params);
-        if (!$stmt->rowCount()) {
-            throw new RuntimeException("Optimistic lock failed for article {$employee->getId()}");
+        $f = $stmt->rowCount();
+        if (!$f) {
+            throw new RuntimeException("Optimistic lock failed for employee {$employee->getId()}");
         }
     }
 }

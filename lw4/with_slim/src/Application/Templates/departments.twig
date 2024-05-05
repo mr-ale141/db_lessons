@@ -1,0 +1,42 @@
+{% extends "head.twig" %}
+{% block body %}
+    <button class="logout" onclick="logoutHandler()">
+        LogOut
+    </button>
+    <h1>Bad roads company</h1>
+    <div class="add">
+        <span>Department list</span>
+        <a href="http://127.0.0.1:8000/add_dep/">Add new</a>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th scope="col">Id</th>
+                <th scope="col">City</th>
+                <th scope="col">Address</th>
+                <th scope="col">Zip code</th>
+                <th scope="col">Phone</th>
+                <th scope="col">Email</th>
+                <th scope="col">Size</th>
+                <th scope="col">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for row in departmentList %}
+            <tr>
+                <th scope="row">{{row.id}}</th>
+                <td>{{row.city}}</td>
+                <td>{{row.address}}</td>
+                <td>{{row.zipCode}}</td>
+                <td>{{row.phone}}</td>
+                <td>{{row.email}}</td>
+                <td>{{row.size}}</td>
+                <td>
+                    <a href="http://127.0.0.1:8000/delete_dep/?dep_id={{ row.id }}">Del</a>
+                    <a href="http://127.0.0.1:8000/edit_dep/?dep_id={{ row.id }}">Edit</a>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

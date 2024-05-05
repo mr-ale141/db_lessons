@@ -1,0 +1,90 @@
+{% extends "head.twig" %}
+{% block body %}
+{% if isEdit %}
+    <h1>Edit employee</h1>
+    <form class="new_emp_form" id="new_emp" action="http://127.0.0.1:8000/edit_emp/" method="post">
+        <input type="text" style="display: none"
+               id="dep_id" name="dep_id" value="{{ employee.departmentId }}">
+        <input type="text" style="display: none"
+               id="emp_id" name="emp_id" value="{{ employee.id }}">
+{% else %}
+    <h1>Create new employee</h1>
+    <form class="new_emp_form" id="new_emp" action="http://127.0.0.1:8000/add_emp/" method="post">
+        <input type="text" style="display: none"
+               id="dep_id" name="dep_id" value="{{ dep_id }}">
+{% endif %}
+        <div class="new_dep_item">
+            <label for="fname">First name:</label>
+            <input type="text" id="fname" name="fname"
+                   value="{{ employee.firstName }}" required>
+        </div>
+        <div class="new_dep_item">
+            <label for="mname">Middle name:</label>
+            <input type="text" id="mname" name="mname"
+                   value="{{ employee.middleName }}" required>
+        </div>
+        <div class="new_dep_item">
+            <label for="lname">Last name:</label>
+            <input type="text" id="lname" name="lname"
+                   value="{{ employee.lastName }}">
+        </div>
+        <div class="new_dep_item">
+            <label for="sex">Sex:</label>
+            <select id="sex" name="sex">
+                <option value="M" {% if employee.sex == 'M' %}selected{% endif %}>M</option>
+                <option value="F" {% if employee.sex == 'F' %}selected{% endif %}>F</option>
+            </select>
+        </div>
+        <div class="new_dep_item">
+            <label for="birth">Birth date:</label>
+            <input type="date" id="birth" name="birth" value="{{ employee.birthDate|date('Y-m-d') }}" required>
+        </div>
+        <div class="new_dep_item">
+            <label for="address">Address:</label>
+            <input type="text" id="address" name="address"
+                   value="{{ employee.address }}" required>
+        </div>
+        <div class="new_dep_item">
+            <label for="employment">Employment date:</label>
+            <input type="date" id="employment" name="employment" value="{{ employee.employment|date('Y-m-d') }}" required>
+        </div>
+        <div class="new_dep_item">
+            <label for="position">Position:</label>
+            <input type="text" id="position" name="position"
+                   value="{{ employee.position }}" required>
+        </div>
+        <div class="new_dep_item">
+            <label for="exp">Experience:</label>
+            <input type="number" value="{{ employee.experience }}" step="0.1" min="0" max="99" id="exp" name="exp">
+        </div>
+        <div class="new_dep_item">
+            <label for="phone">Phone:</label>
+            <input type="text" id="phone" name="phone"
+                   value="{{ employee.phone }}" required>
+        </div>
+    </form>
+    <div class="new_emp_button">
+        <input form="new_emp" type="submit">
+    </div>
+{% if isEdit %}
+    <div class="new_pass_form">
+        <div class="new_dep_item">
+            <label for="email">Email:</label>
+            <input type="text" id="email" name="email" required>
+        </div>
+        <div class="new_dep_item">
+            <label for="pass">Password:</label>
+            <input type="password" id="pass" name="pass" required>
+        </div>
+        <div class="new_dep_item">
+            <label for="conform">Conform:</label>
+            <input type="password" id="conform" name="conform" required>
+        </div>
+        <div class="new_pass_button">
+            <button onclick="saveNewPass()">
+                Save
+            </button>
+        </div>
+    </div>
+{% endif %}
+{% endblock %}

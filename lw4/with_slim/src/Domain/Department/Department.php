@@ -22,12 +22,12 @@ class Department
      * @param string|null $email
      */
     public function __construct(
-        ?int $id,
         string $city,
         string $address,
         int $zipCode,
         string $phone,
-        ?string $email
+        ?string $email,
+        ?int $id
     ) {
         $this->email = $email;
         $this->phone = $phone;

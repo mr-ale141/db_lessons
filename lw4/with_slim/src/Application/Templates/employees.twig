@@ -1,0 +1,42 @@
+{% extends "head.twig" %}
+{% block body %}
+    <button class="logout" onclick="logoutHandler()">
+        LogOut
+    </button>
+    <h1>Department in '{{ department.city }}'</h1>
+    <div class="add">
+        <span>Employee list</span>
+        <a href="http://127.0.0.1:8000/add_emp/?dep_id={{ department.id }}">Add new</a>
+    </div>
+    <table>
+        <thead>
+        <tr>
+            <th scope="col">Id</th>
+            <th scope="col">Name</th>
+            <th scope="col">Sex</th>
+            <th scope="col">Birth</th>
+            <th scope="col">Position</th>
+            <th scope="col">Address</th>
+            <th scope="col">Phone</th>
+            <th scope="col">Email</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for row in employeeList %}
+            <tr>
+                <th scope="row">{{ row.id }}</th>
+                <td>{{ row.firstName }} {{ row.middleName }} {{ row.lastNaame }}</td>
+                <td>{{ row.sex }}</td>
+                <td>{{ row.birthDate|date('Y-m-d') }}</td>
+                <td>{{ row.address }}</td>
+                <td>{{ row.phone }}</td>
+                <td>{{ row.email }}</td>
+                <td>
+                    <a href="http://127.0.0.1:8000/delete_emp/?emp_id={{ row.id }}">Del</a>
+                    <a href="http://127.0.0.1:8000/edit_emp/?emp_id={{ row.id }}">Edit</a>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

@@ -19,7 +19,7 @@ class ActionPayload implements JsonSerializable
 
     public function __construct(
         int $statusCode = 200,
-        $data = null,
+            $data = null,
         ?ActionError $error = null
     ) {
         $this->statusCode = $statusCode;

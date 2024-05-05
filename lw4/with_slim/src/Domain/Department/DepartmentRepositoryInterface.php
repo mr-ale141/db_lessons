@@ -9,7 +9,8 @@ use App\Domain\Department\Department;
 interface DepartmentRepositoryInterface
 {
     public function findOne(int $id): ?Department;
-    public function getListDepartment(): array;
+    public function getDepartments(): array;
+    public function getDepartmentList(): array;
 
     public function save(Department $department): int;
 

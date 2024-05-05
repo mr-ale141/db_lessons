@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Persistence\Department;
 
 use App\Domain\Department\Department;
+use App\Domain\Department\DepartmentListRow;
 use App\Domain\Department\DepartmentRepositoryInterface;
 use App\Infrastructure\Database\Connection;
 use Exception;
@@ -37,7 +38,7 @@ class DepartmentRepository implements DepartmentRepositoryInterface
         return null;
     }
 
-    public function getListDepartment(): array
+    public function getDepartments(): array
     {
         $query = <<<SQL
             SELECT
@@ -53,16 +54,51 @@ class DepartmentRepository implements DepartmentRepositoryInterface
         );
     }
 
-    private function hydrateDepartment(array $row): Department
+    public function getDepartmentList(): array
+    {
+        $query = <<<SQL
+            SELECT
+                d.id, d.city, d.address, d.zip_code, d.phone, d.email, count(e.id) AS size
+            FROM department d
+                LEFT JOIN bad_roads.employee e on d.id = e.department_id
+            GROUP BY d.id
+            ORDER BY d.id
+            SQL;
+        $stmt = $this->connection->execute($query);
+
+        return array_map(
+            fn($row) => $this->hydrateListDepartments($row),
+            $stmt->fetchAll(PDO::FETCH_ASSOC)
+        );
+    }
+
+    private function hydrateListDepartments(array $row): DepartmentListRow
     {
         try {
-            return new Department(
+            return new DepartmentListRow(
                 (int)$row['id'],
                 (string)$row['city'],
                 (string)$row['address'],
                 (int)$row['zip_code'],
                 (string)$row['phone'],
+                (int)$row['size'],
                 (string)$row['email'],
+            );
+        } catch (Exception $e) {
+            throw new RuntimeException($e->getMessage(), $e->getCode(), $e);
+        }
+    }
+
+    private function hydrateDepartment(array $row): Department
+    {
+        try {
+            return new Department(
+                (string)$row['city'],
+                (string)$row['address'],
+                (int)$row['zip_code'],
+                (string)$row['phone'],
+                (string)$row['email'],
+                (int)$row['id'],
             );
         } catch (Exception $e) {
             throw new RuntimeException($e->getMessage(), $e->getCode(), $e);
@@ -90,7 +126,7 @@ class DepartmentRepository implements DepartmentRepositoryInterface
 
         $this->connection->execute(
             <<<SQL
-            DELETE FROM department WHERE id = ($id)
+            DELETE FROM department WHERE id = ?
             SQL,
             [$id]
         );

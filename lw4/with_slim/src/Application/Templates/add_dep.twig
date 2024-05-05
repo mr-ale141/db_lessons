@@ -1,0 +1,29 @@
+{% extends "head.twig" %}
+{% block body %}
+    <h1>New department</h1>
+    <form class="new_dep_form" action="http://127.0.0.1:8000/add_dep/" method="post">
+        <input class="new_dep_item" type="text"
+               id="city"
+               name="city"
+               placeholder="Enter City" required>
+        <input class="new_dep_item" type="text"
+               id="address"
+               name="address"
+               placeholder="Enter Address" required>
+        <input class="new_dep_item" type="text"
+               id="zip_code"
+               name="zip_code"
+               placeholder="Enter Zip Code" required>
+        <input class="new_dep_item" type="text"
+               id="phone"
+               name="phone"
+               placeholder="Enter Phone" required>
+        <input class="new_dep_item" type="text"
+               id="email"
+               name="email"
+               placeholder="Enter Email">
+        <div class="new_dep_button">
+            <input type="submit">
+        </div>
+    </form>
+{% endblock %}

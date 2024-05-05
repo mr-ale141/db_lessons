@@ -32,3 +32,51 @@ CREATE TABLE IF NOT EXISTS `bad_roads`.`employee`
         REFERENCES `bad_roads`.`department` (`id`)
         ON UPDATE CASCADE ON DELETE CASCADE
 );
+
+INSERT INTO `bad_roads`.`department` (
+    id,
+    city,
+    address,
+    zip_code,
+    phone
+)
+VALUES (
+    1,
+    'Tambov',
+    'Lenina 10',
+    '852369',
+    '+7(852)562-48-56'
+);
+
+INSERT INTO `bad_roads`.`employee` (
+    id,
+    department_id,
+    firstname,
+    middlename,
+    lastname,
+    sex,
+    birth_date,
+    experience,
+    address,
+    phone,
+    email,
+    password,
+    employment,
+    position
+)
+VALUES (
+    1,
+    1,
+    'Dmitriy',
+    'Mikhailov',
+    null,
+    'M',
+    DATE '1970-01-01',
+    0.2,
+    'Gagarina 3',
+    '96-80-32',
+    'ale141@rambler.ru',
+    '123456',
+    CURRENT_DATE(),
+    'june'
+);

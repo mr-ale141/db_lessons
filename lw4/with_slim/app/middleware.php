@@ -11,7 +11,5 @@ return function (App $app) {
     $app->add(SessionMiddleware::class);
 
     $twig = Twig::create(__DIR__ . '\..\src\Application\Templates', ['cache' => false]);
-
-// Add Twig-View Middleware
     $app->add(TwigMiddleware::create($app, $twig));
 };

@@ -25,20 +25,20 @@ class Employee
      * @param string $position
      */
     public function __construct(
-        private ?int $id,
         private int $department_id,
         private string $firstName,
         private string $middleName,
-        private ?string $lastName = null,
         private string $sex,
         private DateTimeImmutable $birthDate,
-        private ?float $experience = null,
         private string $address,
+        private DateTimeImmutable $employment,
+        private string $position,
+        private ?int $id,
+        private ?string $lastName = null,
+        private ?float $experience = null,
         private ?string $phone = null,
         private ?string $email = null,
         private ?string $password = null,
-        private DateTimeImmutable $employment,
-        private string $position
     ) {
     }
 
@@ -48,20 +48,20 @@ class Employee
     }
 
     public function edit(
-        ?int $id,
         int $department_id,
         string $firstName,
         string $middleName,
-        ?string $lastName,
         string $sex,
         DateTimeImmutable $birthDate,
-        ?float $experience,
         string $address,
-        ?string $phone,
-        ?string $email,
-        ?string $password,
         DateTimeImmutable $employment,
-        string $position
+        string $position,
+        ?int $id,
+        ?string $lastName,
+        ?float $experience,
+        ?string $email,
+        ?string $phone,
+        ?string $password,
     ): void {
         $this->id = $id;
         $this->department_id = $department_id;
@@ -137,6 +137,16 @@ class Employee
     public function getPassword(): ?string
     {
         return $this->password;
+    }
+
+    public function setPassword(string $pass): void
+    {
+        $this->password = $pass;
+    }
+
+    public function setEmail(string $email): void
+    {
+        $this->email = $email;
     }
 
     public function getEmployment(): DateTimeImmutable
