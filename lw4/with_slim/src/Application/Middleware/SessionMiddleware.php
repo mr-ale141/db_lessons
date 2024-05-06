@@ -23,9 +23,7 @@ class SessionMiddleware implements Middleware
         $authFromCookie = $cookie['auth'] ?? '';
 
         $serviceProvider = ServiceProvider::getInstance();
-
         $employeeService = $serviceProvider->getEmployeeService();
-
         $employee = $employeeService->getEmployeeByEmail($emailFromCookie);
 
         if ($employee !== null && $employee->getPassword() !== null) {
@@ -36,17 +34,19 @@ class SessionMiddleware implements Middleware
             );
             if ($authFromCookie === $hash) {
                 if ($request->getUri()->getPath() === '/login') {
+                    // если авторизован то на страницу авторизации не заходим
                     header('Location: http://127.0.0.1:8000/departments/');
                     exit();
                 }
+                // или разрешаем любой путь
                 return $handler->handle($request);
             }
         }
-
+        // если не авторизован
         if ($request->getUri()->getPath() === '/login') {
             return $handler->handle($request);
         }
-
+        // withHeader (location) and statusCode 303
         header('Location: http://127.0.0.1:8000/login');
         exit();
     }

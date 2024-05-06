@@ -1,7 +1,7 @@
 <?php
 
 declare(strict_types=1);
-
+// TODO: delete
 namespace App\Application\Settings;
 
 class Settings implements SettingsInterface

@@ -53,7 +53,7 @@ class DepartmentRepository implements DepartmentRepositoryInterface
             $stmt->fetchAll(PDO::FETCH_ASSOC)
         );
     }
-
+// тогда это не репозиторий, вынести в  QweryService
     public function getDepartmentList(): array
     {
         $query = <<<SQL

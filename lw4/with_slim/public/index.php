@@ -9,9 +9,11 @@ use App\Application\Settings\SettingsInterface;
 use DI\ContainerBuilder;
 use Slim\Factory\AppFactory;
 use Slim\Factory\ServerRequestCreatorFactory;
-
+// перенести в каталог транспорт все что касается транспортного уровня Application - Transport
+// TODO: Database rename Common
+// TODO: exp not decimal
 require __DIR__ . '/../vendor/autoload.php';
-
+// убрать лишнее
 // Instantiate PHP-DI ContainerBuilder
 $containerBuilder = new ContainerBuilder();
 

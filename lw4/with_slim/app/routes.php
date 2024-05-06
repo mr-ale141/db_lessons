@@ -20,6 +20,7 @@ return function (App $app) {
         $view = Twig::fromRequest($request);
         return $view->render($response, 'login.twig');
     });
+    // однообразно все оброботчики в контроллере
     $app->get('/', function (Request $request, Response $response) {
         header('Location: http://127.0.0.1:8000/departments/');
         exit();
