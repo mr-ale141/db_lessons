@@ -1,0 +1,12 @@
+node_id,node_name,child_nodes,leaf_node,tolorg_link,extinct,confidence,phylesis
+1,Life on Earth,4,0,1,0,0,0
+2,Eubacteria,24,0,1,0,0,0
+3,Aquificae,10,0,1,0,0,0
+4,Aquifex,0,0,0,0,0,0
+5,Calderobacterium,0,0,0,0,0,0
+6,Hydrogenobacter,0,0,0,0,0,0
+7,Thermocrinis,0,0,0,0,0,0
+8,Hydrogenothermus,0,0,0,0,0,0
+9,Persephonella,0,0,0,0,0,0
+10,Sulfurihydrogenibium,0,0,0,0,0,0
+11,Balnearium,0,0,0,0,2,0
