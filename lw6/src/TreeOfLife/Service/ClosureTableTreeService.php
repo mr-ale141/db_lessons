@@ -27,7 +27,7 @@ class ClosureTableTreeService implements TreeOfLifeServiceInterface
           tn.name,
           tn.extinct,
           tn.confidence
-        FROM tree_of_life.tree_of_life_node tn
+        FROM tree_of_life_node tn
         WHERE tn.id = :id
         SQL;
         $row = $this->connection->execute($query, [':id' => $id])->fetch(\PDO::FETCH_ASSOC);
@@ -45,8 +45,8 @@ class ClosureTableTreeService implements TreeOfLifeServiceInterface
           tn.confidence,
           t.ancestor_id,
           t.is_root
-        FROM tree_of_life.tree_of_life_node tn
-          LEFT JOIN tree_of_life.tree_of_life_closure_table t ON t.node_id = tn.id
+        FROM tree_of_life_node tn
+          LEFT JOIN tree_of_life_closure_table t ON t.node_id = tn.id # AND t.distance = 1
         WHERE t.distance = 1 OR t.is_root = true
         SQL;
 
@@ -66,13 +66,13 @@ class ClosureTableTreeService implements TreeOfLifeServiceInterface
           (
               SELECT
                   t_sub.ancestor_id
-              FROM tree_of_life.tree_of_life_node tn_sub
-                INNER JOIN tree_of_life.tree_of_life_closure_table t_sub ON t_sub.node_id = tn_sub.id
+              FROM tree_of_life_node tn_sub
+                INNER JOIN tree_of_life_closure_table t_sub ON t_sub.node_id = tn_sub.id
               WHERE t_sub.distance = 1 AND tn_sub.id = tn.id
-          ) AS ancestor_id,
+          ) AS ancestor_id, # parent_id
           (tn.id = :id) AS is_root
-        FROM tree_of_life.tree_of_life_node tn
-          LEFT JOIN tree_of_life.tree_of_life_closure_table t ON tn.id = t.node_id
+        FROM tree_of_life_node tn
+          INNER JOIN tree_of_life_closure_table t ON tn.id = t.node_id
         WHERE t.ancestor_id = :id
         SQL;
         $rows = $this->connection->execute($query, [':id' => $id])->fetchAll(\PDO::FETCH_ASSOC);
@@ -83,39 +83,16 @@ class ClosureTableTreeService implements TreeOfLifeServiceInterface
     public function getNodePath(int $id): array
     {
         $query = <<<SQL
-        WITH RECURSIVE cte AS
-            (
-                SELECT
-                    t.node_id,
-                    t.ancestor_id
-                FROM tree_of_life.tree_of_life_node n
-                    LEFT JOIN tree_of_life.tree_of_life_closure_table t on t.node_id = n.id
-                WHERE t.distance = 1 AND n.id = :id
-                UNION ALL
-                SELECT
-                    t.node_id,
-                    t.ancestor_id
-                FROM tree_of_life.tree_of_life_node n
-                    INNER JOIN cte ON n.id = cte.ancestor_id
-                    LEFT JOIN tree_of_life.tree_of_life_closure_table t on t.node_id = n.id
-                WHERE t.distance = 1
-            )
+        # можно проще
         SELECT
           tn.id,
           tn.name,
           tn.extinct,
           tn.confidence
-        FROM cte
-          INNER JOIN tree_of_life.tree_of_life_node tn ON tn.id = cte.node_id
-        UNION ALL
-        SELECT
-            tn.id,
-            tn.name,
-            tn.extinct,
-            tn.confidence
-        FROM tree_of_life.tree_of_life_node tn
-            LEFT JOIN tree_of_life.tree_of_life_closure_table t ON tn.id = t.node_id
-        WHERE t.distance = 0 AND t.is_root = true
+        FROM tree_of_life_node tn
+          INNER JOIN tree_of_life_closure_table t ON tn.id = t.ancestor_id
+        WHERE t.node_id = :id
+        ORDER BY tn.id DESC
         SQL;
         $rows = $this->connection->execute($query, [':id' => $id])->fetchAll(\PDO::FETCH_ASSOC);
 
@@ -130,8 +107,8 @@ class ClosureTableTreeService implements TreeOfLifeServiceInterface
           tn.name,
           tn.extinct,
           tn.confidence
-        FROM tree_of_life.tree_of_life_node tn
-          INNER JOIN tree_of_life.tree_of_life_closure_table t on tn.id = t.ancestor_id
+        FROM tree_of_life_node tn
+          INNER JOIN tree_of_life_closure_table t ON tn.id = t.ancestor_id
         WHERE t.distance = 1 AND t.node_id = :id
         SQL;
         $row = $this->connection->execute($query, [':id' => $id])->fetch(\PDO::FETCH_ASSOC);
@@ -147,8 +124,8 @@ class ClosureTableTreeService implements TreeOfLifeServiceInterface
           tn.name,
           tn.extinct,
           tn.confidence
-        FROM tree_of_life.tree_of_life_node tn
-          INNER JOIN tree_of_life.tree_of_life_closure_table t on tn.id = t.node_id
+        FROM tree_of_life_node tn
+          INNER JOIN tree_of_life_closure_table t on tn.id = t.node_id
         WHERE t.distance = 1 AND t.ancestor_id = :id
         SQL;
         $rows = $this->connection->execute($query, [':id' => $id])->fetchAll(\PDO::FETCH_ASSOC);
@@ -176,9 +153,9 @@ class ClosureTableTreeService implements TreeOfLifeServiceInterface
             $this->insertIntoNodeTable([$node]);
 
             $query = <<<SQL
-            INSERT INTO tree_of_life.tree_of_life_closure_table (node_id, ancestor_id, distance, is_root)
+            INSERT INTO tree_of_life_closure_table (node_id, ancestor_id, distance, is_root)
                 SELECT :nodeId, ancestor_id, distance + 1, false
-                FROM tree_of_life.tree_of_life_closure_table
+                FROM tree_of_life_closure_table
                 WHERE node_id = :parentId
                 UNION ALL
                 SELECT :nodeId, :nodeId, 0, false
@@ -200,25 +177,25 @@ class ClosureTableTreeService implements TreeOfLifeServiceInterface
         }
 
         $query = <<<SQL
-        DELETE a FROM tree_of_life.tree_of_life_closure_table AS a
-            JOIN tree_of_life.tree_of_life_closure_table AS d 
+        DELETE a FROM tree_of_life_closure_table AS a
+            JOIN tree_of_life_closure_table AS d 
                 ON a.node_id = d.node_id
-            LEFT JOIN tree_of_life.tree_of_life_closure_table AS x
+            LEFT JOIN tree_of_life_closure_table AS x
                 ON x.ancestor_id = d.ancestor_id AND x.node_id = a.ancestor_id
         WHERE d.ancestor_id = :id AND x.ancestor_id IS NULL;
         SQL;
         $this->connection->execute($query, [':id' => $id]);
 
         $query = <<<SQL
-        INSERT INTO tree_of_life.tree_of_life_closure_table 
+        INSERT INTO tree_of_life_closure_table 
             (node_id, ancestor_id, distance, is_root)
         SELECT 
             subtree.node_id,
             supertree.ancestor_id, 
             supertree.distance + subtree.distance + 1,
             false
-        FROM tree_of_life.tree_of_life_closure_table AS supertree 
-            INNER JOIN tree_of_life.tree_of_life_closure_table AS subtree
+        FROM tree_of_life_closure_table AS supertree 
+            INNER JOIN tree_of_life_closure_table AS subtree
         WHERE 
             subtree.ancestor_id = :id AND supertree.node_id = :new_parent_id;
         SQL;
@@ -232,10 +209,10 @@ class ClosureTableTreeService implements TreeOfLifeServiceInterface
         // Удаляются только строки из tree_of_life_node, а строки из tree_of_life_closure_table будут удалены
         // за счёт ON DELETE CASCADE у внешнего ключа
         $query = <<<SQL
-        DELETE FROM tree_of_life.tree_of_life_node
+        DELETE FROM tree_of_life_node
         WHERE id IN (
             SELECT node_id
-            FROM tree_of_life.tree_of_life_closure_table
+            FROM tree_of_life_closure_table
             WHERE ancestor_id = :id
         )
         SQL;
@@ -273,10 +250,16 @@ class ClosureTableTreeService implements TreeOfLifeServiceInterface
         $results = [];
         $ancestors = [];
         $this->addClosureTableDataRecursive($root, $results, $ancestors, true);
+        if (sizeof($results) !== 0)
+        {
+            $this->insertIntoTreeTable($results);
+            $results = [];
+        }
     }
 
     private function addClosureTableDataRecursive(TreeOfLifeNode $node, array &$results, array &$ancestors, bool $isRoot): void
     {
+        # можно использовать массив и оптимизировать быстродействие (поэтому медленно)
         $ancestors[] = $node->getId();
         foreach ($node->getChildren() as $child)
         {
@@ -290,9 +273,12 @@ class ClosureTableTreeService implements TreeOfLifeServiceInterface
                 sizeof($ancestors) -  array_search($ancestor, $ancestors) - 1,
                 $isRoot
             );
+            if (sizeof($results) === self::INSERT_BATCH_SIZE)
+            {
+                $this->insertIntoTreeTable($results);
+                $results = [];
+            }
         }
-        $this->insertIntoTreeTable($results);
-        $results = [];
         array_pop($ancestors);
     }
 
@@ -335,7 +321,7 @@ class ClosureTableTreeService implements TreeOfLifeServiceInterface
 
         $placeholders = self::buildInsertPlaceholders(count($nodes), 4);
         $query = <<<SQL
-            INSERT INTO tree_of_life.tree_of_life_closure_table (node_id, ancestor_id, distance, is_root)
+            INSERT INTO tree_of_life_closure_table (node_id, ancestor_id, distance, is_root)
             VALUES $placeholders
             SQL;
         $params = [];
