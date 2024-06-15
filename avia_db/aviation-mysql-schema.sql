@@ -1,3 +1,7 @@
+CREATE DATABASE bookings CHARACTER SET = utf8mb4;
+
+USE bookings;
+
 CREATE TABLE aircrafts_data (
   aircraft_code CHAR(3) NOT NULL,
   model JSON NOT NULL,
